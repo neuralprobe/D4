@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
+import pandas as pd
 from ApiAccess.ApiAccess import ClientType, ClientManager
-
+from alpaca.trading.enums import QueryOrderStatus
+from alpaca.trading.requests import GetOrdersRequest
 
 class SingletonMeta(type):
     """A metaclass for Singleton pattern."""
@@ -15,175 +17,158 @@ class SingletonMeta(type):
 class AccountBase(metaclass=SingletonMeta, ABC):
     """Base class for account management."""
     def __init__(self):
-        self.client = ClientManager()
-        self.trading_client = self.client.get_client(ClientType.TRADE)
-        self.cash;
+        self.cash = 0
 
     @abstractmethod
     def get_cash(self):
         pass
 
+    @abstractmethod
     def update(self, change = 0):
         pass
 
 
-class Account_Local(AccountBase):
+class AccountLocal(AccountBase):
     """Simulated account class."""
     def __init__(self):
         super().__init__()
 
-    def get_local_cash(self):
+    def set_cash(self, cash):
+        self.cash = cash
+
+    def get_cash(self):
         """Get the local cash value."""
-        return self.local_cash
+        return self.cash
 
-    def spend_local_cash(self, amount):
-        """Decrease the local cash by a given amount."""
-        self.local_cash -= amount
-
-    def earn_local_cash(self, amount):
-        """Increase the local cash by a given amount."""
-        self.local_cash += amount
+    def update(self, change = 0):
+        self.cash += change
 
 
-class Account_Live(AccountBase):
+class AccountLive(AccountBase):
     """Live account class."""
     def __init__(self):
         super().__init__()
-        self.local_cash = self.cash  # Sync local cash with remote cash
+        self.trading_client = ClientManager().get_client(ClientType.TRADE)
+
+    def get_cash(self):
+        """Get the local cash value."""
+        return self.cash
+
+    def update(self, change = 0):
+        self.cash = float(self.trading_client.get_account().cash)
 
 
-class PortfolioBase(metaclass=SingletonMeta):
-    """Base class for portfolio management."""
+class PositionBase(metaclass=SingletonMeta):
+    """Base class for position management."""
     def __init__(self):
-        self.trading_client = get_client('trade')
-        self.local_portfolio = {}
-        self.local_value = 0.0
+        self.assets = {}
+        self.value = 0.0
 
-    def update(self):
-        """Update the portfolio from the remote API."""
-        self.portfolio = self.trading_client.get_all_positions()
-
-    def add_new_asset(self, asset):
-        """Add a new asset or update an existing one."""
-        symbol = asset['symbol']
-        if symbol in self.local_portfolio:
-            existing = self.local_portfolio[symbol]
-            existing['qty'] += asset['qty']
-            existing['cost'] += asset['cost']
-            existing['avg_price'] = existing['cost'] / existing['qty']
-            existing['stop_loss'] = max(existing['stop_loss'], asset['stop_loss'])
-            existing['stop_loss_name'] = asset['stop_loss_name']
-            existing['current_close'] = asset['price']
-        else:
-            self.local_portfolio[symbol] = {
-                'time': asset['time'],
-                'qty': asset['qty'],
-                'cost': asset['cost'],
-                'avg_price': asset['cost'] / asset['qty'],
-                'stop_loss': asset['stop_loss'],
-                'stop_loss_name': asset['stop_loss_name'],
-                'current_close': asset['price']
-            }
-
-    def remove_asset(self, symbol):
-        """Remove an asset from the portfolio."""
-        if symbol in self.local_portfolio:
-            del self.local_portfolio[symbol]
-
-    def get_local_portfolio_value(self):
-        """Calculate the total value of the local portfolio."""
-        return sum(
-            asset['qty'] * asset['current_close']
-            for asset in self.local_portfolio.values()
-        )
-
-    def update_current_price(self, symbol, close):
-        """Update the current price of a specific asset."""
-        if symbol in self.local_portfolio:
-            self.local_portfolio[symbol]['current_close'] = close
-
-    def print_portfolio(self):
-        """Print the current portfolio."""
-        if self.local_portfolio:
-            print("Portfolio:")
-            for symbol, data in self.local_portfolio.items():
+    def print_positions(self):
+        """Print the current positions."""
+        if self.assets:
+            print("Positions:")
+            for symbol, data in self.assets.items():
                 print(
-                    f"{symbol} | Qty: {data['qty']} | Avg Price: {data['avg_price']} | "
-                    f"Current Price: {data['current_close']} | Stop Loss: {data['stop_loss']} | "
-                    f"Indicator: {data['stop_loss_name']}"
+                    f"{symbol} | Time: {data['time']} | "
+                    f"Price: {data['price']} | AvgPrice: {data['avg_price']} | Qty: {data['qty']} | Value: {data['market_value']} | "
+                    f"StopLoss: {data['stop_loss']} | StopLossName: {data['stop_loss_name']}"
                 )
         else:
-            print("Portfolio is empty.")
+            print("Position is empty.")
 
 
-class Portfolio(PortfolioBase):
-    """Simulated portfolio class."""
+class PositionLocal(PositionBase):
+    """Simulated position class."""
     def __init__(self):
         super().__init__()
 
+    def add_new_asset(self, new_asset):
+        """Add a new asset or update an existing one."""
+        symbol = new_asset['symbol']
+        market_value = round(new_asset['price'] * new_asset['qty'])
+        self.value += market_value
+        if symbol in self.assets:
+            asset_info = self.assets[symbol]
+            asset_info['price'] = new_asset['price']
+            asset_info['avg_price'] = round(asset_info['cost'] / asset_info['qty'], 2)
+            asset_info['qty'] += new_asset['qty']
+            asset_info['market_value'] = market_value
+            asset_info['cost'] += new_asset['cost']
+            asset_info['stop_loss'] = max(asset_info['stop_loss'], new_asset['stop_loss'])
+            asset_info['stop_loss_name'] = new_asset['stop_loss_name']
 
-class Portfolio_Live(PortfolioBase):
-    """Live portfolio class."""
+        else:
+            self.assets[symbol] = dict(time=new_asset['time'], price=new_asset['price'],
+                                       avg_price=new_asset['cost'] / new_asset['qty'], qty=new_asset['qty'],
+                                       market_value=market_value, cost=new_asset['cost'],
+                                       stop_loss=new_asset['stop_loss'], stop_loss_name=new_asset['stop_loss_name'])
+
+    def remove_asset(self, symbol):
+        """Remove an asset from the positions."""
+        if symbol in self.assets:
+            self.value -= round(self.assets[symbol]['price'] * self.assets['qty'], 2)
+            del self.assets[symbol]
+
+    def update_price(self, symbol, price):
+        """Update the current price of a specific asset."""
+        if symbol in self.assets:
+            self.assets[symbol]['price'] = price
+
+
+class PositionLive(PositionBase):
+    """Live position class."""
     def __init__(self):
         super().__init__()
-        for asset in self.trading_client.get_all_positions():
-            self.add_new_asset({
-                'symbol': asset.symbol,
-                'time': pd.Timestamp.now(tz='America/New_York'),
-                'qty': float(asset.qty),
-                'cost': float(asset.cost_basis),
-                'price': float(asset.current_price),
-                'stop_loss': float(asset.avg_entry_price) * 0.99,
-                'stop_loss_name': ''
-            })
-
-from alpaca.trading.enums import QueryOrderStatus
-from alpaca.trading.requests import GetOrdersRequest
-
-class Orders:
-    """Class for managing trading orders."""
-    def __init__(self):
-        self.trading_client = get_client('trade')
-        self.orders_open = []
-        self.orders_closed = []
+        self.trading_client = ClientManager().get_client(ClientType.TRADE)
+        self.assets_info = {}
 
     def update(self):
+        positions = self.trading_client.get_all_positions()
+        self.value = 0.0
+        for asset in positions:
+            self.value += float(asset.market_value)
+            if asset.symbol in self.assets:
+                asset_info = self.assets[asset.symbol]
+                asset_info['price'] = float(asset.current_price)
+                asset_info['avg_price'] = float(asset.avg_entry_price)
+                asset_info['qty'] = float(asset.qty)
+                asset_info['market_value'] = float(asset.market_value)
+                asset_info['cost'] = float(asset.cost_basis)
+                asset_info['stop_loss'] = self.assets_info[asset.symbol]['stop_loss']
+                asset_info['stop_loss_name'] = self.assets_info[asset.symbol]['stop_loss_name']
+
+            else:
+                self.assets[asset.symbol] = dict(time=pd.Timestamp.now(tz='America/New_York'),
+                                                 price=float(asset.current_price), qty=float(asset.qty),
+                                                 cost=float(asset.cost_basis), avg_price=float(asset.avg_entry_price),
+                                                 stop_loss=self.assets_info[asset.symbol]['stop_loss'],
+                                                 stop_loss_name=self.assets_info[asset.symbol]['stop_loss_name'])
+
+    def add_new_asset(self, new_asset):
+        symbol = new_asset['symbol']
+        self.assets_info[symbol] = dict(stop_loss=new_asset['stop_loss'], stop_loss_name=new_asset['stop_loss_name'])
+
+    def remove_asset(self, symbol):
+        """Remove an asset from the positions."""
+        if symbol in self.assets:
+            self.value -= self.assets[symbol]['market_value']
+            del self.assets[symbol]
+        if symbol in self.assets_info:
+            del self.assets_info[symbol]
+
+
+class OrderList(metaclass=SingletonMeta, ABC):
+    """Class for managing trading orders."""
+    def __init__(self):
+        self.trading_client = ClientManager().get_client(ClientType.TRADE)
+        self.orders_open = []
+
+    def check_open(self):
         """Update the open and closed orders."""
         self.orders_open = self.trading_client.get_orders(
             filter=GetOrdersRequest(
                 status=QueryOrderStatus.OPEN, limit=100, nested=True
             )
         )
-        self.orders_closed = self.trading_client.get_orders(
-            filter=GetOrdersRequest(
-                status=QueryOrderStatus.CLOSED, limit=100, nested=True
-            )
-        )
-
-
-# Simulated Account and Portfolio
-# account = Account()
-# portfolio = Portfolio()
-#
-# account.spend_local_cash(1000)
-# portfolio.add_new_asset({
-#     'symbol': 'AAPL',
-#     'time': pd.Timestamp.now(),
-#     'qty': 10,
-#     'cost': 1500,
-#     'price': 150,
-#     'stop_loss': 140,
-#     'stop_loss_name': '10% drop'
-# })
-# portfolio.print_portfolio()
-#
-# # Live Account and Portfolio
-# live_account = Account_Live()
-# live_portfolio = Portfolio_Live()
-# live_portfolio.print_portfolio()
-
-
-# orders = Orders()
-# orders.update()
-# print("Open Orders:", orders.orders_open)
-# print("Closed Orders:", orders.orders_closed)
+        return len(self.orders_open)
