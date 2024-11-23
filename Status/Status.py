@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 import pandas as pd
-from ApiAccess.ApiAccess import ClientType, ClientManager
 from alpaca.trading.enums import QueryOrderStatus
 from alpaca.trading.requests import GetOrdersRequest
+from ApiAccess.ApiAccess import ClientType, ClientManager
+
 
 class SingletonMeta(type):
     """A metaclass for Singleton pattern."""
@@ -20,7 +21,7 @@ class AccountBase(metaclass=SingletonMeta, ABC):
         self.cash = 0
 
     @abstractmethod
-    def get_cash(self):
+    def get_total_value(self):
         pass
 
     @abstractmethod
@@ -32,13 +33,13 @@ class AccountLocal(AccountBase):
     """Simulated account class."""
     def __init__(self):
         super().__init__()
+        self.positions = PositionLocal()
+
+    def get_total_value(self):
+        return self.cash + self.positions.value
 
     def set_cash(self, cash):
         self.cash = cash
-
-    def get_cash(self):
-        """Get the local cash value."""
-        return self.cash
 
     def update(self, change = 0):
         self.cash += change
@@ -48,13 +49,16 @@ class AccountLive(AccountBase):
     """Live account class."""
     def __init__(self):
         super().__init__()
+        self.positions = PositionLive()
         self.trading_client = ClientManager().get_client(ClientType.TRADE)
+        self.order_list = OrderList()
 
-    def get_cash(self):
-        """Get the local cash value."""
-        return self.cash
+    def get_total_value(self):
+        self.positions.update()
+        return self.cash + self.positions.value
 
     def update(self, change = 0):
+        self.positions.update()
         self.cash = float(self.trading_client.get_account().cash)
 
 
@@ -137,13 +141,18 @@ class PositionLive(PositionBase):
                 asset_info['cost'] = float(asset.cost_basis)
                 asset_info['stop_loss'] = self.assets_info[asset.symbol]['stop_loss']
                 asset_info['stop_loss_name'] = self.assets_info[asset.symbol]['stop_loss_name']
+                asset_info['valid'] = True
 
             else:
                 self.assets[asset.symbol] = dict(time=pd.Timestamp.now(tz='America/New_York'),
                                                  price=float(asset.current_price), qty=float(asset.qty),
                                                  cost=float(asset.cost_basis), avg_price=float(asset.avg_entry_price),
                                                  stop_loss=self.assets_info[asset.symbol]['stop_loss'],
-                                                 stop_loss_name=self.assets_info[asset.symbol]['stop_loss_name'])
+                                                 stop_loss_name=self.assets_info[asset.symbol]['stop_loss_name'],
+                                                 valid=True)
+        invalid_symbols = [symbol for symbol in self.assets if not self.assets[symbol]['valid']]
+        for symbol in invalid_symbols:
+            del self.assets[symbol]
 
     def add_new_asset(self, new_asset):
         symbol = new_asset['symbol']
