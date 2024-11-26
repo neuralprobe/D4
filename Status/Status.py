@@ -14,6 +14,10 @@ class SingletonMeta(type):
             cls._instances[cls] = super().__call__(*args, **kwargs)
         return cls._instances[cls]
 
+    @classmethod
+    def is_instantiated(cls, target_cls):
+        """Check if a class is already instantiated."""
+        return target_cls in cls._instances
 
 class AccountBase(metaclass=SingletonMeta, ABC):
     """Base class for account management."""
