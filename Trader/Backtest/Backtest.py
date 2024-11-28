@@ -1,14 +1,8 @@
 from datetime import datetime
 import pytz
 import pandas as pd
-from Strategy.SymbolFilter import EquityFilter
 from Fetch.Fetch import Fetcher
 from alpaca.data.timeframe import TimeFrame
-from Strategy.Maengja import Maengja
-from Order.Order import BuyerLocal, SellerLocal
-from Status.Status import AccountLocal
-import pandas_market_calendars as cal
-from Common.Common import DataFrameUtils, Time, Tee
 
 class HistoryManager:
     def __init__(self, fetcher, symbols, history_param):
@@ -46,9 +40,7 @@ class HistoryManager:
 
 
 class ProphecyManager:
-    def __init__(self, symbols, account):
         self.symbols = symbols
-        self.sages = {symbol: Maengja(symbol, account) for symbol in symbols}
         self.current_prophecy = pd.DataFrame()
 
     def update_sages(self, history, recent):
@@ -88,7 +80,6 @@ class MarketCalendar:
         self.all_open_days_list = []
 
     def is_market_open(self, current_time):
-        nyse = cal.get_calendar('NYSE')
         valid_days = nyse.valid_days(start_date="2020-01-01", end_date=datetime.now().strftime('%Y-%m-%d'))
         open_dates = [date.date() for date in valid_days]
         return current_time.date() in open_dates and 9 <= current_time.hour < 16
@@ -103,18 +94,13 @@ class Trader:
         self.history_manager = HistoryManager(self.fetcher, self.symbols, self.history_param)
         self.prophecy_manager = None
         self.market_calendar = MarketCalendar(self.time.timezone)
-        self.buyer = BuyerLocal()
-        self.seller = SellerLocal()
-        self.account = AccountLocal()
         self.order_manager = OrderManager(self.buyer, self.seller, 2, 0.05, self.portfolio, self.account)
 
     def initialize(self, start, end):
         self.time.start = pd.Timestamp(start, tz=pytz.timezone(self.time.timezone))
         self.time.end = pd.Timestamp(end, tz=pytz.timezone(self.time.timezone))
         self.time.current = self.time.start
-        self.symbols = EquityFilter(renew=True,asset_filter_rate=0.05,start_timestamp=self.time.start).filter_symbols()
         self.history_manager.initialize_history(self.time.start, self.time.current, self.time.timezone)
-        self.prophecy_manager = ProphecyManager(self.symbols, self.account)
 
     def simulate_trade(self, start, end):
         self.initialize(start, end)
