@@ -1,30 +1,20 @@
-from abc import ABC, abstractmethod
 import math
 import time
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 from Status.Status import AccountLocal, AccountLive
+from Common.Common import SingletonMeta
 
-class SingletonMeta(type):
-    """A metaclass for Singleton pattern."""
-    _instances = {}
 
-    def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances:
-            cls._instances[cls] = super().__call__(*args, **kwargs)
-        return cls._instances[cls]
-
-class BuyerBase(metaclass=SingletonMeta, ABC):
+class BuyerBase(metaclass=SingletonMeta):
     """Base class for buying operations."""
 
     def __init__(self, trade_cfg):
         self.one_time_invest_ratio = trade_cfg['one_time_invest_ratio']
 
-    @abstractmethod
     def buy(self, prophecy, buy_symbol):
         pass
 
-    @abstractmethod
     def get_qty(self, price):
         pass
 
@@ -65,7 +55,7 @@ class BuyerLive(BuyerBase):
         if not len(prophecy):
             return
         buy_symbol_df = prophecy[prophecy['symbol'] == buy_symbol]
-        price = buy_symbol_df['current_close'].iloc[-1]
+        price = buy_symbol_df['price'].iloc[-1]
         qty = self.get_qty(price)
         if qty == 0:
             return
@@ -95,13 +85,12 @@ class BuyerLive(BuyerBase):
         return qty
 
 
-class SellerBase(metaclass=SingletonMeta, ABC):
+class SellerBase(metaclass=SingletonMeta):
     """Base class for selling operations."""
 
     def __init__(self):
         pass
 
-    @abstractmethod
     def sell(self, prophecy, sell_symbol):
         pass
 
@@ -113,10 +102,10 @@ class SellerLocal(SellerBase):
         self.account = AccountLocal()
 
     def sell(self, prophecy, sell_symbol):
-        if not len(prophecy):
+        if not len(prophecy) or sell_symbol not in self.account.positions.assets.keys():
             return
         sell_symbol_df = prophecy[prophecy['symbol'] == sell_symbol]
-        price = sell_symbol_df['current_close'].iloc[-1]
+        price = sell_symbol_df['price'].iloc[-1]
         qty = self.account.positions.assets[sell_symbol]['qty']
         sell_value = round(price * qty,2)
         self.account.positions.remove_asset(sell_symbol)

@@ -8,6 +8,7 @@ from alpaca.data.timeframe import TimeFrame
 from alpaca.data.enums import DataFeed
 from ApiAccess.ApiAccess import ClientType, ClientManager
 import Common.Common as Common
+import os
 
 class AssetFilter:
     """Base class for asset filtering with Alpaca API."""
@@ -28,7 +29,7 @@ class EquityFilter(AssetFilter):
     """Filter US equities based on trading volume and value."""
 
     def __init__(self, renew=False, asset_filter_rate=0.05, start_timestamp=pd.Timestamp.now()):
-        super().__init__('US_EQUITY', f'Data/Symbols/symbols_us_{start_timestamp}.csv')
+        super().__init__('US_EQUITY', f'{os.environ.get("D4")}/Data/Symbols/symbols_us_{start_timestamp}.csv')
         self.renew = renew
         self.start_timestamp = start_timestamp
         self.asset_filter_rate = asset_filter_rate
@@ -53,7 +54,7 @@ class EquityFilter(AssetFilter):
             request_params = StockBarsRequest(
                 symbol_or_symbols=batch,
                 timeframe=TimeFrame.Day,
-                start=self.start_timestamp - timedelta(days=120),
+                start=self.start_timestamp - timedelta(days=10), #120
                 end=self.start_timestamp,
                 feed=DataFeed.SIP
             )
@@ -86,7 +87,7 @@ class CryptoFilter(AssetFilter):
     """Filter cryptocurrencies based on trading volume and value."""
 
     def __init__(self, renew=False, asset_filter_rate=0.20, start_timestamp=pd.Timestamp.now()):
-        super().__init__('CRYPTO', f'Data/Symbols/symbols_crypto_{start_timestamp}.csv')
+        super().__init__('CRYPTO', f'{os.environ.get("D4")}/Data/Symbols/symbols_crypto_{start_timestamp}.csv')
         self.renew = renew
         self.start_timestamp = start_timestamp
         self.asset_filter_rate = asset_filter_rate

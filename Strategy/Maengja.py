@@ -2,8 +2,9 @@ import pandas as pd
 import pandas_ta as ta
 from scipy.signal import find_peaks
 import numpy as np
-from Status.Status import SingletonMeta, PositionLocal, PositionLive
+from Status.Status import PositionLocal, PositionLive
 from itertools import product
+from Common.Common import SingletonMeta
 
 class Maengja:
 

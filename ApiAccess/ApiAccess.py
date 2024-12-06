@@ -1,6 +1,6 @@
 from enum import Enum
 import yaml
-
+import os
 from alpaca.trading.client import TradingClient
 from alpaca.data.historical import StockHistoricalDataClient, CryptoHistoricalDataClient
 from alpaca.data.live import StockDataStream, CryptoDataStream
@@ -21,7 +21,7 @@ class ClientManager:
 
     def _load_keys(self):
         """Load keys from the keys.yaml file."""
-        with open(f"{self.relative_location}keys.yaml") as f:
+        with open(f"{os.environ.get('D4')}/ApiAccess/key.yaml") as f:
             return yaml.safe_load(f)
 
     def get_alpaca_paper_creds(self):
@@ -48,3 +48,6 @@ class ClientManager:
         return clients.get(client_type, lambda: None)()
 
 
+if __name__ == "__main__":
+    client = ClientManager()
+    trade = client.get_client(ClientType.TRADE)

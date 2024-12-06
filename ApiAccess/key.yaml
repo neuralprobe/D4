@@ -1,8 +1,8 @@
-ALPACA_PAPER:
-  API_KEY: "PKRGEDYWTPLYYDM8PZ77"
-  API_SECRET: "G7Xnz04u1OPjuGOXJyvGlqFQ8LJF7m7QbdQb0uDT"
-  BASE_URL: "https://paper-api.alpaca.markets/v2"
-  PAPER: True
-  X-Request-ID: "eeea9f57bce660c7989ce7a5c41d6dee"
-FMP:
-  API_KEY: "IAGLnkG4g6qiq2qhADt6QZA5tLdkk23Q"
+alpaca_paper:
+  api_key: "PKRGEDYWTPLYYDM8PZ77"
+  api_secret: "G7Xnz04u1OPjuGOXJyvGlqFQ8LJF7m7QbdQb0uDT"
+  base_url: "https://paper-api.alpaca.markets/v2"
+  paper: True
+  x-request-id: "eeea9f57bce660c7989ce7a5c41d6dee"
+fmp:
+  api_key: "IAGLnkG4g6qiq2qhADt6QZA5tLdkk23Q"

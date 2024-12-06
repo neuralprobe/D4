@@ -36,7 +36,7 @@ class SymbolManager:
         self.asset_filter_rate = asset_filter_rate
 
     def initialize_symbols(self, start_timestamp):
-        self.symbols = EquityFilter(renew=True, asset_filter_rate=self.asset_filter_rate, start_timestamp=start_timestamp).filter_symbols()[:self.max_symbols]
+        self.symbols = EquityFilter(renew=False, asset_filter_rate=self.asset_filter_rate, start_timestamp=start_timestamp).filter_symbols()[:self.max_symbols]
         return self.symbols
 
 
@@ -152,12 +152,14 @@ class OrderManager:
         sell_symbols = prophecy[prophecy['sell']]['symbol'].tolist()
         for symbol in sell_symbols:
             self.seller.sell(prophecy, symbol)
+            print("sell, account:", self.account.get_total_value())
 
         buy_candidates = prophecy[prophecy['buy']]
         top_buy_candidates = buy_candidates.nlargest(self.trade_cfg['max_buy_per_min'], 'trading_value')
         for _, row in top_buy_candidates.iterrows():
             if self.is_affordable(row['symbol'], row['price']):
                 self.buyer.buy(prophecy, row['symbol'])
+                print("buy, account:", self.account.get_total_value())
 
     def is_affordable(self, symbol, price):
         if symbol in self.account.positions.assets:
@@ -171,10 +173,12 @@ class Trader:
 
     def __init__(self):
         self.time_manager = TimeManager()
-        self.symbol_manager = SymbolManager()
+        self.symbol_manager = SymbolManager(max_symbols=5, asset_filter_rate=0.05)
         self.data_manager = DataManager(history_param={'period': 2000, 'bar_window': 1, 'min_num_bars': 480})
         self.strategy_manager = StrategyManager()
         self.order_manager = OrderManager(one_time_invest_ratio=0.05, max_buy_per_min=2, max_ratio_per_asset=0.05)
+        self.account = AccountLocal()
+        self.account.set_cash(100000)
 
     def run(self, start, end):
         self.initialize(start, end)
@@ -186,7 +190,9 @@ class Trader:
                 if recent:
                     prophecy = self.strategy_manager.evaluate(self.data_manager.history, recent)
                     self.order_manager.execute_orders(prophecy)
+                    print("time:",self.time_manager.current)
             self.time_manager.advance_time()
+
 
     def initialize(self, start, end):
         self.time_manager.set_period(start, end)
@@ -196,7 +202,8 @@ class Trader:
 
     def is_market_open(self):
         nyse = Calender.get_calendar('NYSE')
-        valid_days = nyse.valid_days(start_date=str(self.time_manager.start), end_date=str(self.time_manager.end))
+        valid_days = nyse.valid_days(start_date=self.time_manager.start, end_date=self.time_manager.end,
+                                     tz=self.time_manager.timezone)
         open_dates = [day.date() for day in valid_days]
         current_time = (self.time_manager.current.hour, self.time_manager.current.minute)
         return self.time_manager.current.date() in open_dates and (9, 30) <= current_time <= (16, 0)

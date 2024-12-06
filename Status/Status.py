@@ -1,34 +1,18 @@
-from abc import ABC, abstractmethod
 import pandas as pd
 from alpaca.trading.enums import QueryOrderStatus
 from alpaca.trading.requests import GetOrdersRequest
 from ApiAccess.ApiAccess import ClientType, ClientManager
+from Common.Common import SingletonMeta
 
 
-class SingletonMeta(type):
-    """A metaclass for Singleton pattern."""
-    _instances = {}
-
-    def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances:
-            cls._instances[cls] = super().__call__(*args, **kwargs)
-        return cls._instances[cls]
-
-    @classmethod
-    def is_instantiated(cls, target_cls):
-        """Check if a class is already instantiated."""
-        return target_cls in cls._instances
-
-class AccountBase(metaclass=SingletonMeta, ABC):
+class AccountBase(metaclass=SingletonMeta):
     """Base class for account management."""
     def __init__(self):
         self.cash = 0
 
-    @abstractmethod
     def get_total_value(self):
         pass
 
-    @abstractmethod
     def update(self, change = 0):
         pass
 
@@ -108,14 +92,15 @@ class PositionLocal(PositionBase):
 
         else:
             self.assets[symbol] = dict(time=new_asset['time'], price=new_asset['price'],
-                                       avg_price=new_asset['cost'] / new_asset['qty'], qty=new_asset['qty'],
+                                       avg_price=new_asset['cost'] / new_asset['qty'],
+                                       qty=new_asset['qty'],
                                        market_value=market_value, cost=new_asset['cost'],
                                        stop_loss=new_asset['stop_loss'], stop_loss_name=new_asset['stop_loss_name'])
 
     def remove_asset(self, symbol):
         """Remove an asset from the positions."""
         if symbol in self.assets:
-            self.value -= round(self.assets[symbol]['price'] * self.assets['qty'], 2)
+            self.value -= self.assets[symbol]['market_value']
             del self.assets[symbol]
 
     def update_price(self, symbol, price):
@@ -171,7 +156,7 @@ class PositionLive(PositionBase):
             del self.assets_info[symbol]
 
 
-class OrderList(metaclass=SingletonMeta, ABC):
+class OrderList(metaclass=SingletonMeta):
     """Class for managing trading orders."""
     def __init__(self):
         self.trading_client = ClientManager().get_client(ClientType.TRADE)

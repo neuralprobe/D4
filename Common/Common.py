@@ -15,9 +15,13 @@ class CSVHandler:
     @staticmethod
     def write_from_list(str_list, file_path):
         """Write a list of strings to a CSV file."""
+        print(f"TRYING TO WRITE at {file_path}")
+        print(str_list)
         with open(file_path, 'w', newline='') as file:
+            print(f"WRITING ENTER at {file_path}")
             writer = csv.writer(file)
             writer.writerows([[line] for line in str_list])
+            print(f"WRITING DONE at {file_path}")
 
 
 class DataFrameUtils:
@@ -54,3 +58,18 @@ class Tee:
     def flush(self):
         for f in self.files:
             f.flush()
+
+
+class SingletonMeta(type):
+    """A metaclass for Singleton pattern."""
+    _instances = {}
+
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super().__call__(*args, **kwargs)
+        return cls._instances[cls]
+
+    @classmethod
+    def is_instantiated(cls, target_cls):
+        """Check if a class is already instantiated."""
+        return target_cls in cls._instances

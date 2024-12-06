@@ -56,7 +56,7 @@ class ApiDataFetcher:
 class LocalDataFetcher:
     """Handles local data management and caching."""
 
-    def __init__(self, base_directory='Data/BackData'):
+    def __init__(self, base_directory=f'{os.environ.get("D4")}/Data/Local'):
         self.base_directory = base_directory
         self.symbol_files_dict = {}
         self.cache = {}
