@@ -43,7 +43,7 @@ class Maengja:
         self.detect_stoploss_downward_breakout(recent)
         self.resistance_upward_breakout(data, recent)
         self.top_resist_downward_break(data, recent)
-        self.update_sell_signal(data, recent)
+        self.update_sell_signal()
 
         self.trim_notes()
         return self.note
@@ -108,6 +108,10 @@ class Maengja:
         if 'PO_divergence' not in data.columns:
             data['PO_divergence'] = np.zeros(len(data), dtype=float)
         peaks, dips = self.get_peaks_and_dips(data['close'], 2)
+        if len(peaks) == 0 or len(dips) == 0:
+            data.loc[self.current_hour, 'PO_divergence'] = 0.0
+            self.note.setdefault('PO_divergence', []).append(0.0)
+            return
         peak_first = peaks[0] < dips[0]
         dip_first = peaks[0] > dips[0]
         close_peaks = data['close'].iloc[peaks].to_list()
@@ -171,6 +175,10 @@ class Maengja:
     def check_rsi(self, data, window, num_hills):
         if 'RSI_check' not in data.columns:
             data['RSI_check'] = np.full(len(data), 0, dtype=float)
+        if len(data) < window:
+            data.loc[self.current_hour, 'RSI_check'] = 0.0
+            self.note.setdefault('RSI_check', []).append(0.0)
+            return
         current_rsi = data['RSI'].iloc[-1]
         position = 0
         if current_rsi < 30:
@@ -245,18 +253,18 @@ class Maengja:
         stop_loss_name_candidates = []
 
         if is_bb1_touch:
-            stop_loss_candidates.append(data['close'].iloc[-1] * (100 - self.params['BB_trailing_stop_loss']) * 0.01)
+            stop_loss_candidates.append(round((data['close'].iloc[-1] * (100 - self.params['BB_trailing_stop_loss']) * 0.01),2))
             stop_loss_name_candidates.append('bb1_lower')
         if is_bb2_touch:
-            stop_loss_candidates.append(data['close'].iloc[-1] * (100 - self.params['BB_trailing_stop_loss']) * 0.01)
+            stop_loss_candidates.append(round((data['close'].iloc[-1] * (100 - self.params['BB_trailing_stop_loss']) * 0.01),2))
             stop_loss_name_candidates.append('bb2_lower')
         if is_sma_breakthrough:
             sma_name = self.note['SMA_below_close'][-1]
-            stop_loss_candidates.append(data[sma_name].iloc[-1])
+            stop_loss_candidates.append(round(data[sma_name].iloc[-1]))
             stop_loss_name_candidates.append(sma_name)
 
         if self.symbol in self.positions.assets:
-            stop_loss_candidates.append(self.positions.assets[self.symbol]['stop_loss'])
+            stop_loss_candidates.append(round((self.positions.assets[self.symbol]['stop_loss']),2))
             stop_loss_name_candidates.append(self.positions.assets[self.symbol]['stop_loss_name'])
 
         if stop_loss_candidates:
@@ -287,7 +295,6 @@ class Maengja:
             self.note.setdefault('new_stop_loss_name_candidate', []).append('')
             return
         resistance_upward_breakout = False
-        current_stop_loss = self.positions.assets[self.symbol]['stop_loss']
         current_stop_loss_name = self.positions.assets[self.symbol]['stop_loss_name']
         current_stop_loss_value = data[current_stop_loss_name].iloc[-1]
         new_stop_loss_candidate = current_stop_loss_value
@@ -319,7 +326,13 @@ class Maengja:
         top_resist_downward_break = high_resist_free and bearish_breakout
         self.note.setdefault('top_resist_downward_break', []).append(top_resist_downward_break)
 
-    def update_sell_signal(self, data, recent):
+    def update_sell_signal(self):
+        if self.symbol not in self.positions.assets:
+            self.note.setdefault('sell', []).append(False)
+            self.note.setdefault('sell_reason', []).append('')
+            self.note.setdefault('keep_profit', []).append(False)
+            return
+
         do_stop_loss = self.note['stoploss_downward_breakout'][-1]
         is_resistance_upward_breakout = self.note['resistance_upward_breakout'][-1]
         is_po_divergence_bullish = self.note['PO_divergence'][-1] > 0
@@ -336,11 +349,12 @@ class Maengja:
         if do_keep_profit:
             self.positions.assets[self.symbol]['stop_loss'] = max(
                 self.positions.assets[self.symbol]['stop_loss'],
-                self.note['new_stop_loss']
+                self.note.get('new_stop_loss',0)
             )
         sell = (
                 (do_stop_loss or do_take_profit or top_resist_downward_break or is_now_end_of_day)
                 and not do_keep_profit
+                and not self.note.get('buy',[False])[-1]
         )
         self.note.setdefault('sell', []).append(sell)
         sell_reason = (

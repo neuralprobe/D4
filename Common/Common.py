@@ -1,6 +1,7 @@
 import csv
 from dataclasses import dataclass, field
 import pandas as pd
+import os
 
 
 class CSVHandler:
@@ -73,3 +74,50 @@ class SingletonMeta(type):
     def is_instantiated(cls, target_cls):
         """Check if a class is already instantiated."""
         return target_cls in cls._instances
+
+
+class Printer:
+    @staticmethod
+    def store_prophecy_history(prophecy_history, filename):
+        prophecy_history.rename(columns={'time': '시간',
+                                      'symbol': '종목',
+                                      'touch_bb1_lower': 'bb1아래',
+                                      'bullish_breakout_bb1_lower': 'bb1돌파1',
+                                      'bullish_breakout_bb1_lower_margin': 'bb1돌파2',
+                                      'touch_bb2_lower': 'bb1터치',
+                                      'bullish_breakout_bb2_lower': 'bb2아래',
+                                      'bullish_breakout_bb2_lower_margin': 'bb2돌파1',
+                                      'PO_divergence': 'bb2돌파2',
+                                      'RSI_check': 'RSI다이버',
+                                      'SMA_align_strength': '정배열',
+                                      'check_SMA_breakthrough': 'SMA돌파',
+                                      'SMA_below_close': '종가밑SMA',
+                                      'buy': '매수의견',
+                                      'buy_reason': '매수근거',
+                                      'buy_strength': '매수강도',
+                                      'stop_loss': '손절가',
+                                      'stop_loss_name': '손절근거',
+                                      'current_close': '종가',
+                                      'trading_value': '거래대금',
+                                      'stoploss_downward_breakout': '손절가터치',
+                                      'resistance_upward_breakout': '저항선터치',
+                                      'new_stop_loss_candidate': '손절가후보',
+                                      'new_stop_loss_name_candidate': '손절가후보근거',
+                                      'top_resist_downward_break': '무저항매도',
+                                      'sell': '매도의견',
+                                      'sell_reason': '매도근거',
+                                      'keep_profit': '보유의견',
+                                      'hold': '보유여부',
+                                      'qty': '갯수',
+                                      'cost': '비용',
+                                      'avg_price': '평균값',
+                                      'buy_order': '매수주문',
+                                      'sell_order': '매도주문'},
+                             inplace=True)
+
+        prophecy_history = prophecy_history.apply(
+            lambda col: col.map(lambda x: round(x, 2) if isinstance(x, float) else x)
+        )
+
+        prophecy_history.to_csv(f"{os.environ.get('D4')}/Results/{filename}")
+

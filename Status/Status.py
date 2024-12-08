@@ -27,10 +27,10 @@ class AccountLocal(AccountBase):
         return self.cash + self.positions.value
 
     def set_cash(self, cash):
-        self.cash = cash
+        self.cash = round(cash,2)
 
     def update(self, change = 0):
-        self.cash += change
+        self.cash += round(change,2)
 
 
 class AccountLive(AccountBase):
@@ -78,23 +78,21 @@ class PositionLocal(PositionBase):
     def add_new_asset(self, new_asset):
         """Add a new asset or update an existing one."""
         symbol = new_asset['symbol']
-        market_value = round(new_asset['price'] * new_asset['qty'])
-        self.value += market_value
+        self.value += new_asset['cost']
         if symbol in self.assets:
-            asset_info = self.assets[symbol]
-            asset_info['price'] = new_asset['price']
-            asset_info['avg_price'] = round(asset_info['cost'] / asset_info['qty'], 2)
-            asset_info['qty'] += new_asset['qty']
-            asset_info['market_value'] = market_value
-            asset_info['cost'] += new_asset['cost']
-            asset_info['stop_loss'] = max(asset_info['stop_loss'], new_asset['stop_loss'])
-            asset_info['stop_loss_name'] = new_asset['stop_loss_name']
+            self.assets[symbol]['price'] = new_asset['price']
+            self.assets[symbol]['qty'] += new_asset['qty']
+            self.assets[symbol]['market_value'] = new_asset['price'] * self.assets[symbol]['qty']
+            self.assets[symbol]['cost'] += new_asset['cost']
+            self.assets[symbol]['avg_price'] = round(self.assets[symbol]['cost'] / self.assets[symbol]['qty'], 2)
+            self.assets[symbol]['stop_loss'] = max(self.assets[symbol]['stop_loss'], new_asset['stop_loss'])
+            self.assets[symbol]['stop_loss_name'] = new_asset['stop_loss_name']
 
         else:
             self.assets[symbol] = dict(time=new_asset['time'], price=new_asset['price'],
-                                       avg_price=new_asset['cost'] / new_asset['qty'],
+                                       avg_price=round(new_asset['cost'] / new_asset['qty'],2),
                                        qty=new_asset['qty'],
-                                       market_value=market_value, cost=new_asset['cost'],
+                                       market_value=new_asset['cost'], cost=new_asset['cost'],
                                        stop_loss=new_asset['stop_loss'], stop_loss_name=new_asset['stop_loss_name'])
 
     def remove_asset(self, symbol):
@@ -106,7 +104,22 @@ class PositionLocal(PositionBase):
     def update_price(self, symbol, price):
         """Update the current price of a specific asset."""
         if symbol in self.assets:
+            prev_market_value = self.assets[symbol]['market_value']
+            new_market_value = round(price * self.assets[symbol]['qty'], 2)
             self.assets[symbol]['price'] = price
+            self.assets[symbol]['market_value'] = new_market_value
+            self.value = self.value + new_market_value - prev_market_value
+
+    def print_positions(self):
+        if len(self.assets.keys()):
+            print("보유종목/수량/평균가/현재가/손절가/손절지표:", [(symbol,
+                                                        round(self.assets[symbol]['qty'],2),
+                                                        round(self.assets[symbol]['avg_price'],2),
+                                                        round(self.assets[symbol]['price'],2),
+                                                        round(self.assets[symbol]['stop_loss'],2),
+                                                        self.assets[symbol]['stop_loss_name'])  for symbol in self.assets.keys()])
+        else:
+            print("보유종목: 없음")
 
 
 class PositionLive(PositionBase):
