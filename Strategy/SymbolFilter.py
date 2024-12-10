@@ -9,6 +9,7 @@ from alpaca.data.enums import DataFeed
 from ApiAccess.ApiAccess import ClientType, ClientManager
 import Common.Common as Common
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class AssetFilter:
     """Base class for asset filtering with Alpaca API."""
@@ -28,11 +29,12 @@ class AssetFilter:
 class EquityFilter(AssetFilter):
     """Filter US equities based on trading volume and value."""
 
-    def __init__(self, renew=False, asset_filter_rate=0.05, start_timestamp=pd.Timestamp.now()):
+    def __init__(self, renew=False, asset_filter_rate=0.05, start_timestamp=pd.Timestamp.now(), max_workers=1):
         super().__init__('US_EQUITY', f'{os.environ.get("D4")}/Data/Symbols/symbols_us_{start_timestamp}.csv')
         self.renew = renew
         self.start_timestamp = start_timestamp
         self.asset_filter_rate = asset_filter_rate
+        self.max_workers = max_workers
 
     @staticmethod
     def get_symbols():
@@ -44,7 +46,7 @@ class EquityFilter(AssetFilter):
             dict(symbol=asset.symbol, tradable=asset.tradable) for asset in assets if asset.tradable
             ]).set_index('symbol')
 
-    def get_bars(self, symbols):
+    def get_bars_slow(self, symbols):
         """Fetch 60-day stock bar data for given symbols."""
         stock_client = ClientManager().get_client(ClientType.STOCK_HISTORY)
         request_size = 1024
@@ -61,6 +63,43 @@ class EquityFilter(AssetFilter):
             daily_bars = stock_client.get_stock_bars(request_params).df
             df_daily_bars = pd.concat([df_daily_bars, daily_bars.groupby(level='symbol').tail(60)])
         return df_daily_bars
+
+    # 병렬화된 get_bars_slow 함수
+    def get_bars(self, symbols):
+        """Fetch 60-day stock bar data for given symbols using parallel processing."""
+        stock_client = ClientManager().get_client(ClientType.STOCK_HISTORY)
+        request_size = 1024
+
+        def fetch_batch(i):
+            batch = symbols[i * request_size: (i + 1) * request_size]
+            request_params = StockBarsRequest(
+                symbol_or_symbols=batch,
+                timeframe=TimeFrame.Day,
+                start=self.start_timestamp - timedelta(days=10),  # 120
+                end=self.start_timestamp,
+                feed=DataFeed.SIP
+            )
+            daily_bars = stock_client.get_stock_bars(request_params).df
+            return daily_bars.groupby(level='symbol').tail(60)
+
+        num_batches = math.ceil(len(symbols) / request_size)
+        df_daily_bars = pd.DataFrame()
+
+        # 병렬 실행
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = {executor.submit(fetch_batch, i): i for i in range(num_batches)}
+
+            for future in as_completed(futures):
+                batch_index = futures[future]
+                try:
+                    batch_bars = future.result()
+                    df_daily_bars = pd.concat([df_daily_bars, batch_bars])
+                    print(f"Successfully fetched batch {batch_index}")
+                except Exception as e:
+                    print(f"Error fetching batch {batch_index}: {e}")
+
+        return df_daily_bars
+
 
     def filter_symbols(self):
         """Filter US equities and return top 5% by trading value."""
