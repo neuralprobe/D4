@@ -4,12 +4,13 @@ from alpaca.data.timeframe import TimeFrame
 from datetime import datetime
 from Common.Common import DataFrameUtils, Printer
 from Fetch.Fetch import Fetcher
-from Order.Order import BuyerLocal, SellerLocal
-from Status.Status import AccountLocal
+from Order.Order import BuyerLocal, BuyerLive, SellerLocal, SellerLive
+from Status.Status import AccountLocal, AccountLive
 from Strategy.Maengja import Maengja
 from Strategy.SymbolFilter import EquityFilter
 import pandas_market_calendars as Calender
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
 
 class TimeManager:
 
@@ -27,10 +28,13 @@ class TimeManager:
         self.current = pd.Timestamp(start, tz=self.timezone)
         self.end = pd.Timestamp(end, tz=self.timezone)
 
-    def advance_time(self, minutes=1):
+    def advance_current(self, minutes=1):
         self.current += pd.Timedelta(minutes=minutes)
 
-    def is_within_period(self):
+    def sync_current(self):
+        self.current = pd.Timestamp.now(tz=self.timezone)
+
+    def before_end(self):
         return self.current <= self.end
 
     def initialize_open_dates(self):
@@ -47,13 +51,15 @@ class TimeManager:
 
 class SymbolManager:
 
-    def __init__(self, max_symbols=50, asset_filter_rate=0.05):
+    def __init__(self, max_symbols=50, asset_filter_rate=0.05, renew_symbol=False, max_workers=1):
         self.symbols = []
         self.max_symbols = max_symbols
         self.asset_filter_rate = asset_filter_rate
+        self.renew_symbol = renew_symbol
+        self.max_workers = max_workers
 
     def initialize_symbols(self, start_timestamp):
-        self.symbols = EquityFilter(renew=False, asset_filter_rate=self.asset_filter_rate, start_timestamp=start_timestamp).filter_symbols()[:self.max_symbols]
+        self.symbols = EquityFilter(renew=self.renew_symbol, asset_filter_rate=self.asset_filter_rate, start_timestamp=start_timestamp, max_workers=self.max_workers).filter_symbols()[:self.max_symbols]
         return self.symbols
 
 
@@ -138,9 +144,9 @@ class DataManager:
 
 class DataManagerFast(DataManager):
 
-    def __init__(self, history_param):
+    def __init__(self, history_param, max_workers):
         super().__init__(history_param)
-        self.max_workers = 24  # 병렬 처리에 사용할 최대 스레드 수
+        self.max_workers = max_workers  # 병렬 처리에 사용할 최대 스레드 수
 
     def fetch_history(self, symbols, current, timezone):
         def fetch_symbol_history(symbol):
@@ -166,6 +172,7 @@ class DataManagerFast(DataManager):
                     data = data_symbol[symbol]
                     if data is not None and not data.empty:
                         self.history[symbol] = data
+                        print(f"Successful data fetching frm {symbol}")
                     else:
                         print(f"Warning: No data returned for symbol {symbol}")
                 except Exception as e:
@@ -247,13 +254,18 @@ class StrategyManagerFast:
 
 class OrderManager:
 
-    def __init__(self, one_time_invest_ratio, max_buy_per_min, max_ratio_per_asset):
+    def __init__(self, one_time_invest_ratio, max_buy_per_min, max_ratio_per_asset, live):
         self.trade_cfg = dict(one_time_invest_ratio=one_time_invest_ratio,
                               max_buy_per_min=max_buy_per_min,
                               max_ratio_per_asset=max_ratio_per_asset)
-        self.buyer = BuyerLocal(self.trade_cfg)
-        self.seller = SellerLocal()
-        self.account = AccountLocal()
+        if live:
+            self.buyer = BuyerLive(self.trade_cfg)
+            self.seller = SellerLive()
+            self.account = AccountLive()
+        else:
+            self.buyer = BuyerLocal(self.trade_cfg)
+            self.seller = SellerLocal()
+            self.account = AccountLocal()
 
     def execute_orders(self, prophecy, prophecy_history):
         sell_symbols = prophecy[prophecy['sell']]['symbol'].tolist()
@@ -263,7 +275,6 @@ class OrderManager:
                DataFrameUtils.append_inplace(prophecy_history, prophecy[prophecy['symbol'] == symbol])
 
         buy_candidates = prophecy[prophecy['buy']]
-        top_buy_candidates = buy_candidates.nlargest(self.trade_cfg['max_buy_per_min'], 'trading_value')
         sorted_buy_candidates = buy_candidates.sort_values(by='trading_value', ascending=False)
         buy_count = 0
         for _, row in sorted_buy_candidates.iterrows():
@@ -281,57 +292,3 @@ class OrderManager:
             if asset_ratio > self.trade_cfg['max_ratio_per_asset']:
                 return False
         return self.account.cash >= price * 2.0
-
-
-class Trader:
-
-    def __init__(self):
-        self.time_manager = TimeManager()
-        self.symbol_manager = SymbolManager(max_symbols=-1, asset_filter_rate=0.05)
-        self.data_manager = DataManagerFast(history_param={'period': 2000, 'bar_window': 1, 'min_num_bars': 480})
-        self.strategy_manager = StrategyManagerFast()
-        self.order_manager = OrderManager(one_time_invest_ratio=0.05, max_buy_per_min=2, max_ratio_per_asset=0.10)
-        self.account = AccountLocal()
-        self.account.set_cash(100000.00)
-        self.prophecy_history = pd.DataFrame()
-        self.file_name = None
-
-    def run(self, start, end, file_name):
-        self.initialize(start, end, file_name)
-
-        while self.time_manager.is_within_period():
-            if self.time_manager.is_market_open():
-                recent = self.data_manager.update_recent_data(
-                    self.symbol_manager.symbols, self.time_manager.current, self.time_manager.timezone
-                )
-                for symbol in self.account.positions.assets:
-                    if symbol in recent:
-                        self.account.positions.update_price(symbol, round(recent[symbol]['close'].iloc[-1],2))
-                print(f"업데이트시간: {self.time_manager.current}")
-                print(f"총평가가치: ${self.account.get_total_value()}, 현금: ${self.account.cash}, 보유종목_평가금액: ${self.account.positions.value}")
-                if recent:
-                    prophecy = self.strategy_manager.evaluate(self.data_manager.history, recent)
-                    buy_list = prophecy[prophecy['buy']]['symbol'].tolist()
-                    sell_list = prophecy[prophecy['sell']]['symbol'].tolist()
-                    keep_list = prophecy[prophecy['keep_profit']]['symbol'].tolist()
-                    if buy_list or sell_list or keep_list:
-                        print(f"매수의견: {buy_list}, 매도의견: {sell_list}, 보유의견: {keep_list}")
-                    self.order_manager.execute_orders(prophecy, self.prophecy_history)
-                    print("time:",self.time_manager.current)
-            if self.time_manager.current.minute >= 0:
-                self.account.positions.print_positions()
-            self.time_manager.advance_time()
-        Printer.store_prophecy_history(self.prophecy_history, self.file_name)
-
-
-    def initialize(self, start, end, file_name):
-        self.time_manager.set_period(start, end)
-        symbols = self.symbol_manager.initialize_symbols(self.time_manager.start)
-        self.data_manager.fetch_history(symbols, self.time_manager.current, self.time_manager.timezone)
-        self.strategy_manager.initialize_strategies(symbols)
-        self.file_name = file_name + f"_{start}_{end}_{datetime.now(pytz.timezone('America/New_York')).strftime('%Y-%m-%d %H:%M:%S')}.csv"
-
-if __name__ == "__main__":
-    trader = Trader()
-    file_name = "trader_local_maengja"
-    trader.run('2024-07-01 09:30:00', '2024-07-15 16:00:00', file_name)

@@ -253,18 +253,18 @@ class Maengja:
         stop_loss_name_candidates = []
 
         if is_bb1_touch:
-            stop_loss_candidates.append(round((data['close'].iloc[-1] * (100 - self.params['BB_trailing_stop_loss']) * 0.01),2))
+            stop_loss_candidates.append((data['close'].iloc[-1] * (100 - self.params['BB_trailing_stop_loss']) * 0.01))
             stop_loss_name_candidates.append('bb1_lower')
         if is_bb2_touch:
-            stop_loss_candidates.append(round((data['close'].iloc[-1] * (100 - self.params['BB_trailing_stop_loss']) * 0.01),2))
+            stop_loss_candidates.append((data['close'].iloc[-1] * (100 - self.params['BB_trailing_stop_loss']) * 0.01))
             stop_loss_name_candidates.append('bb2_lower')
         if is_sma_breakthrough:
             sma_name = self.note['SMA_below_close'][-1]
-            stop_loss_candidates.append(round(data[sma_name].iloc[-1]))
+            stop_loss_candidates.append(data[sma_name].iloc[-1])
             stop_loss_name_candidates.append(sma_name)
 
         if self.symbol in self.positions.assets:
-            stop_loss_candidates.append(round((self.positions.assets[self.symbol]['stop_loss']),2))
+            stop_loss_candidates.append((self.positions.assets[self.symbol]['stop_loss']))
             stop_loss_name_candidates.append(self.positions.assets[self.symbol]['stop_loss_name'])
 
         if stop_loss_candidates:

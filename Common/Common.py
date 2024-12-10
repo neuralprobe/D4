@@ -2,7 +2,9 @@ import csv
 from dataclasses import dataclass, field
 import pandas as pd
 import os
-
+import sys
+from datetime import datetime
+import pytz
 
 class CSVHandler:
     """Class for handling CSV file operations."""
@@ -48,9 +50,13 @@ class Time:
 
 
 class Tee:
-    """Class to replicate stdout/stderr into multiple files."""
-    def __init__(self, *files):
-        self.files = files
+    _instance = None  # 싱글톤 인스턴스
+
+    def __new__(cls, *files):
+        if not cls._instance:
+            cls._instance = super().__new__(cls)
+            cls._instance.files = files
+        return cls._instance
 
     def write(self, obj):
         for f in self.files:
@@ -59,6 +65,17 @@ class Tee:
     def flush(self):
         for f in self.files:
             f.flush()
+
+
+def setup_logging(file_name, start, end):
+    """stdout을 파일과 콘솔에 동시에 출력하도록 설정."""
+    D4_loc = os.environ.get('D4')
+    results = f"{D4_loc}/Results/"
+    logfile_path = results + file_name + f"_{start}_{end}_{datetime.now(pytz.timezone('America/New_York')).strftime('%Y-%m-%d %H:%M:%S')}.txt"
+    logfile = open(logfile_path, 'w')
+    tee = Tee(sys.stdout, logfile)
+    sys.stdout = tee
+    return logfile  # 파일 닫기를 위해 반환
 
 
 class SingletonMeta(type):
@@ -75,6 +92,8 @@ class SingletonMeta(type):
         """Check if a class is already instantiated."""
         return target_cls in cls._instances
 
+def r2(num):
+    return round(num,2)
 
 class Printer:
     @staticmethod
@@ -116,7 +135,7 @@ class Printer:
                              inplace=True)
 
         prophecy_history = prophecy_history.apply(
-            lambda col: col.map(lambda x: round(x, 2) if isinstance(x, float) else x)
+            lambda col: col.map(lambda x: r2(x) if isinstance(x, float) else x)
         )
 
         prophecy_history.to_csv(f"{os.environ.get('D4')}/Results/{filename}")
