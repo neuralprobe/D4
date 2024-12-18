@@ -1,11 +1,11 @@
 import pandas as pd
 import pytz
 from alpaca.data.timeframe import TimeFrame
-from datetime import datetime
-from Common.Common import DataFrameUtils, Printer
+
+from Common.Common import DataFrameUtils
 from Fetch.Fetch import Fetcher
 from Order.Order import BuyerLocal, BuyerLive, SellerLocal, SellerLive
-from Status.Status import AccountLocal, AccountLive
+from Status.Status import AccountLocal, AccountLive, OrderList
 from Strategy.Maengja import Maengja
 from Strategy.SymbolFilter import EquityFilter
 import pandas_market_calendars as Calender
@@ -212,11 +212,6 @@ class StrategyManagerFast:
     def initialize_strategies(self, symbols):
         self.sages = {symbol: Maengja(symbol) for symbol in symbols}
 
-    def _evaluate_symbol(self, symbol, history, recent):
-        note = self.sages[symbol].update(history[symbol], recent[symbol])
-        recent_note = {key: [note[key][-1]] for key in note}
-        return pd.DataFrame(recent_note)
-
     def evaluate(self, history, recent):
         self.prophecy = pd.DataFrame()
         max_threads = min(self.max_cpus, len(recent))  # 심볼의 수보다 많으면 len(recent)로 조정
@@ -240,21 +235,15 @@ class StrategyManagerFast:
                     print(f"Error evaluating symbol {symbol}: {e}")
         return self.prophecy
 
-    # def evaluate(self, history, recent):
-    #     self.prophecy = pd.DataFrame()
-    #     max_threads = min(self.max_cpus, len(recent))
-    #     hist_symbols = [sym for sym in recent.keys() if sym in history]
-    #     with ThreadPoolExecutor(max_threads) as executor:
-    #         results = list(executor.map(
-    #             lambda symbol: self._evaluate_symbol(symbol, history, recent),
-    #             hist_symbols
-    #         ))
-    #     self.prophecy = pd.concat(results, ignore_index=True)
-    #     return self.prophecy
+    def _evaluate_symbol(self, symbol, history, recent):
+        note = self.sages[symbol].update(history[symbol], recent[symbol])
+        recent_note = {key: [note[key][-1]] for key in note}
+        return pd.DataFrame(recent_note)
 
 class OrderManager:
 
-    def __init__(self, one_time_invest_ratio, max_buy_per_min, max_ratio_per_asset, live):
+    def __init__(self, live, one_time_invest_ratio, max_buy_per_min, max_ratio_per_asset):
+        self.live = live
         self.trade_cfg = dict(one_time_invest_ratio=one_time_invest_ratio,
                               max_buy_per_min=max_buy_per_min,
                               max_ratio_per_asset=max_ratio_per_asset)
@@ -262,29 +251,45 @@ class OrderManager:
             self.buyer = BuyerLive(self.trade_cfg)
             self.seller = SellerLive()
             self.account = AccountLive()
+            self.order_list = OrderList(live)
         else:
             self.buyer = BuyerLocal(self.trade_cfg)
             self.seller = SellerLocal()
             self.account = AccountLocal()
+            self.order_list = OrderList(live)
 
     def execute_orders(self, prophecy, prophecy_history):
-        sell_symbols = prophecy[prophecy['sell']]['symbol'].tolist()
-        for symbol in sell_symbols:
-            sold = self.seller.sell(prophecy, symbol)
-            if sold:
-               DataFrameUtils.append_inplace(prophecy_history, prophecy[prophecy['symbol'] == symbol])
+        try:
+            sell_symbols = prophecy[prophecy['sell']]['symbol'].tolist()
+            self.order_list.update()
+            for symbol in sell_symbols:
+                if self.live:
+                    if (symbol in self.order_list.orders):
+                        continue
+                sold = self.seller.sell(prophecy, symbol, self.order_list)
+                if sold:
+                    DataFrameUtils.append_inplace(prophecy_history, prophecy[prophecy['symbol'] == symbol])
+        except Exception as e:
+            print(f"Sell execution error executing orders: {e}")
 
-        buy_candidates = prophecy[prophecy['buy']]
-        sorted_buy_candidates = buy_candidates.sort_values(by='trading_value', ascending=False)
-        buy_count = 0
-        for _, row in sorted_buy_candidates.iterrows():
-            if self.is_affordable(row['symbol'], row['price']):
-                bought = self.buyer.buy(prophecy, row['symbol'])
-                if bought:
-                    DataFrameUtils.append_inplace(prophecy_history, prophecy[prophecy['symbol'] == row['symbol']])
-                    buy_count += 1
-                if buy_count >= self.trade_cfg['max_buy_per_min']:
-                    break
+        try:
+            buy_hubos = prophecy[prophecy['buy']]
+            sorted_buy_hubos = buy_hubos.sort_values(by='trading_value', ascending=False)
+            buy_count = 0
+            self.order_list.update()
+            for _, row in sorted_buy_hubos.iterrows():
+                if self.is_affordable(row['symbol'], row['price']) and (row['symbol'] not in sell_symbols):
+                    if self.live:
+                        if (row['symbol'] in self.order_list.orders):
+                            continue
+                    bought = self.buyer.buy(prophecy, row['symbol'], self.order_list)
+                    if bought:
+                        DataFrameUtils.append_inplace(prophecy_history, prophecy[prophecy['symbol'] == row['symbol']])
+                        buy_count += 1
+                    if buy_count >= self.trade_cfg['max_buy_per_min']:
+                        break
+        except Exception as e:
+            print(f"Buy execution error executing orders: {e}")
 
     def is_affordable(self, symbol, price):
         if symbol in self.account.positions.assets:

@@ -11,10 +11,10 @@ class TraderLive:
 
     def __init__(self):
         self.time_manager = TimeManager()
-        self.symbol_manager = SymbolManager(max_symbols=-1, asset_filter_rate=0.05, renew_symbol=True, max_workers=24)
-        self.data_manager = DataManagerFast(history_param={'period': 2000, 'bar_window': 1, 'min_num_bars': 480}, max_workers=24)
+        self.symbol_manager = SymbolManager(max_symbols=-1, asset_filter_rate=0.05, renew_symbol=True, max_workers=12)
+        self.data_manager = DataManagerFast(history_param={'period': 2000, 'bar_window': 1, 'min_num_bars': 480}, max_workers=12)
         self.strategy_manager = StrategyManagerFast()
-        self.order_manager = OrderManager(one_time_invest_ratio=0.05, max_buy_per_min=2, max_ratio_per_asset=0.10, live=True)
+        self.order_manager = OrderManager(live = True, one_time_invest_ratio=0.05, max_buy_per_min=2, max_ratio_per_asset=0.10)
         self.account = AccountLive()
         self.account.update()
         self.prophecy_history = pd.DataFrame()
@@ -26,8 +26,8 @@ class TraderLive:
 
         schedule.clear()
         schedule.every().minute.at(":05").do(self._live_trade)
-        self.time_manager.sync_current()
 
+        self.time_manager.sync_current()
         while self.time_manager.before_end():
             try:
                 schedule.run_pending()
@@ -56,12 +56,14 @@ class TraderLive:
                     print(f"매수의견: {buy_list}, 매도의견: {sell_list}, 보유의견: {keep_list}")
                 self.order_manager.execute_orders(prophecy, self.prophecy_history)
                 print("time:",self.time_manager.current)
-        if self.time_manager.current.minute >= 0:
-            self.account.update()
-            self.account.positions.print_positions()
+            if self.time_manager.current.minute >= 0:
+                self.account.update()
+                self.account.positions.print_positions()
+
 
     def initialize(self, start, end, file_name):
         self.time_manager.set_period(start, end)
+        self.time_manager.sync_current()
         symbols = self.symbol_manager.initialize_symbols(self.time_manager.current)
         self.time_manager.sync_current()
         self.data_manager.fetch_history(symbols, self.time_manager.current, self.time_manager.timezone)
@@ -75,8 +77,10 @@ if __name__ == "__main__":
 
     file_name = "trader_live_maengja"
     start = datetime.now()
-    end = datetime.now()+timedelta(days=1)
+    end = datetime.now()+timedelta(hours=7)
 
     log_file = setup_logging(file_name, start, end)
 
     trader.run(start, end, file_name)
+
+    log_file.close()
