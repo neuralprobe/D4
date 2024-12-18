@@ -1,6 +1,6 @@
 alpaca_paper:
-  api_key: "PKRGEDYWTPLYYDM8PZ77"
-  api_secret: "G7Xnz04u1OPjuGOXJyvGlqFQ8LJF7m7QbdQb0uDT"
+  api_key: "PKPJ63YF491BRVT49TXO"
+  api_secret: "5UMF3LUloDTAUsyRkQ6SGNjEwZzC6bvP9gEAy9VH"
   base_url: "https://paper-api.alpaca.markets/v2"
   paper: True
   x-request-id: "eeea9f57bce660c7989ce7a5c41d6dee"

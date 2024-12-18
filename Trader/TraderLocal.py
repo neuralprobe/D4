@@ -9,10 +9,10 @@ class TraderLocal:
 
     def __init__(self):
         self.time_manager = TimeManager()
-        self.symbol_manager = SymbolManager(max_symbols=-1, asset_filter_rate=0.05, renew_symbol=False, max_workers=24)
-        self.data_manager = DataManagerFast(history_param={'period': 2000, 'bar_window': 1, 'min_num_bars': 480}, max_workers=24)
+        self.symbol_manager = SymbolManager(max_symbols=-1, asset_filter_rate=0.05, renew_symbol=True, max_workers=16)
+        self.data_manager = DataManagerFast(history_param={'period': 2000, 'bar_window': 1, 'min_num_bars': 480}, max_workers=16)
         self.strategy_manager = StrategyManagerFast()
-        self.order_manager = OrderManager(one_time_invest_ratio=0.05, max_buy_per_min=2, max_ratio_per_asset=0.10, live=False)
+        self.order_manager = OrderManager(live=False, one_time_invest_ratio=0.05, max_buy_per_min=2, max_ratio_per_asset=0.10)
         self.account = AccountLocal()
         self.account.set_cash(100000.00)
         self.prophecy_history = pd.DataFrame()
@@ -24,6 +24,7 @@ class TraderLocal:
 
         while self.time_manager.before_end():
             self._local_trade()
+            self.time_manager.advance_current()
 
         Printer.store_prophecy_history(self.prophecy_history, self.csv_name)
 
@@ -34,10 +35,9 @@ class TraderLocal:
             )
             for symbol in self.account.positions.assets:
                 if symbol in recent:
-                    self.account.positions.update_price(symbol, round(recent[symbol]['close'].iloc[-1], 2))
+                    self.account.positions.update_price(symbol, recent[symbol]['close'].iloc[-1])
             print(f"업데이트시간: {self.time_manager.current}")
-            print(
-                f"총평가가치: ${r2(self.account.get_total_value())}, 현금: ${r2(self.account.cash)}, 보유종목_평가금액: ${r2(self.account.positions.value)}")
+            print(f"총평가가치: ${r2(self.account.get_total_value())}, 현금: ${r2(self.account.cash)}, 보유종목_평가금액: ${r2(self.account.positions.value)}")
             if recent:
                 prophecy = self.strategy_manager.evaluate(self.data_manager.history, recent)
                 buy_list = prophecy[prophecy['buy']]['symbol'].tolist()
@@ -47,9 +47,8 @@ class TraderLocal:
                     print(f"매수의견: {buy_list}, 매도의견: {sell_list}, 보유의견: {keep_list}")
                 self.order_manager.execute_orders(prophecy, self.prophecy_history)
                 print("time:", self.time_manager.current)
-        if self.time_manager.current.minute >= 0:
-            self.account.positions.print_positions()
-        self.time_manager.advance_current()
+            if self.time_manager.current.minute >= 0:
+                self.account.positions.print_positions()
 
     def initialize(self, start, end, file_name):
         self.time_manager.set_period(start, end)
@@ -63,8 +62,8 @@ if __name__ == "__main__":
     trader = TraderLocal()
 
     file_name = "trader_local_maengja"
-    start = '2024-07-01 09:30:00'
-    end = '2024-07-15 16:00:00'
+    start = '2024-06-01 09:30:00'
+    end = '2024-06-30 16:00:00'
 
     log_file = setup_logging(file_name, start, end)
 

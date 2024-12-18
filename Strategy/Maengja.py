@@ -17,7 +17,7 @@ class Maengja:
         self.positions = PositionLive() if SingletonMeta.is_instantiated(PositionLive) else PositionLocal()
         self.params = dict(BB_1=dict(length=20, std=2, buy_margin=0.01),
                            BB_2=dict(length=4, std=4, buy_margin=0.01),
-                           BB_trailing_stop_loss=0.2,
+                           Trailing=(1.00-0.002),
                            Price_Oscillator=dict(length=14),
                            RSI=dict(length=14, hill_window=32, hills=3),
                            SMA=dict(margin=0.01, periods=[5, 20, 60, 120, 240, 480]),
@@ -25,27 +25,31 @@ class Maengja:
         self.sma_cols = [f'SMA_{period}' for period in self.params['SMA']['periods']]
 
     def update(self, data, recent):
-        self.calculate_indicators(data)
+        try:
+            self.calculate_indicators(data)
+            self.update_position_stop_value(data, recent)
+            self.current_hour = data.index[-1]
+            self.current_minute = recent.index[-1]
+            self.note['time'].append(self.current_minute)
+            self.note['symbol'].append(self.symbol)
 
-        self.current_hour = data.index[-1]
-        self.current_minute = recent.index[-1]
-        self.note['time'].append(self.current_minute)
-        self.note['symbol'].append(self.symbol)
+            self.breakthrough_metric_upward_two_level(data, recent, 'bb1_lower', self.params['BB_1']['buy_margin'])
+            self.breakthrough_metric_upward_two_level(data, recent, 'bb2_lower', self.params['BB_2']['buy_margin'])
+            self.get_po_divergence(data)
+            self.check_rsi(data, self.params['RSI']['hill_window'], self.params['RSI']['hills'])
+            self.check_sma_alignment(data)
+            self.check_sma_breakthrough(data, recent, self.params['SMA']['margin'])
+            self.update_buy_signal(data, recent)
 
-        self.breakthrough_metric_upward_two_level(data, recent, 'bb1_lower', self.params['BB_1']['buy_margin'])
-        self.breakthrough_metric_upward_two_level(data, recent, 'bb2_lower', self.params['BB_2']['buy_margin'])
-        self.get_po_divergence(data)
-        self.check_rsi(data, self.params['RSI']['hill_window'], self.params['RSI']['hills'])
-        self.check_sma_alignment(data)
-        self.check_sma_breakthrough(data, recent, self.params['SMA']['margin'])
-        self.update_buy_signal(data, recent)
+            self.detect_stoploss_downward_breakout(recent)
+            self.resistance_upward_breakout(data, recent)
+            self.top_resist_downward_break(data, recent)
+            self.update_sell_signal()
 
-        self.detect_stoploss_downward_breakout(recent)
-        self.resistance_upward_breakout(data, recent)
-        self.top_resist_downward_break(data, recent)
-        self.update_sell_signal()
+            self.trim_notes()
+        except Exception as e:
+            print(f"Error updating Maengja for symbol {self.symbol}: {e}")
 
-        self.trim_notes()
         return self.note
 
     def calculate_indicators(self, data):
@@ -64,6 +68,22 @@ class Maengja:
             if period <= len(data):
                 data[f'SMA_{period}'] = ta.sma(data['close'], length=period)
 
+    def update_position_stop_value(self, data, recent):
+        for symbol in self.positions.assets:
+            if self.symbol == symbol:
+                # update stop_trailing
+                if ('stop_trailing' in self.positions.assets[symbol]):
+                    self.positions.assets[symbol]['stop_trailing'] = max(self.positions.assets[symbol]['stop_trailing'],
+                                                                         self.positions.assets[symbol]['price'] * self.params['Trailing'])
+                else:
+                    self.positions.assets[symbol]['stop_trailing'] = self.positions.assets[symbol]['price'] * self.params['Trailing']
+                # update stop_value
+                stop_key = self.positions.assets[symbol]['stop_key']
+                if stop_key == '':
+                    continue
+                self.positions.assets[symbol]['stop_value'] = data[stop_key].iloc[-1]
+
+
     def breakthrough_metric_upward_two_level(self, data, recent, metric, margin):
         bullish_breakout = (
                 self.detect_upward_breakout(data, recent, metric, 0.0)
@@ -77,27 +97,27 @@ class Maengja:
         self.note.setdefault(f'touch_{metric}',[]).append(touch)
 
     @staticmethod
-    def detect_upward_breakout(data, recent, metric, margin=0.0):
+    def detect_upward_breakout(data, recent, metric, offset=0.0):
         threshold = data[metric].iloc[-1]
-        threshold_with_margin = threshold + recent['close'].iloc[-1] * margin
+        threshold_with_offset = threshold + recent['close'].iloc[-1] * offset
         price = recent['close'].iloc[-1]
         current_low = data['low'].iloc[-1]
-        if (current_low <= threshold_with_margin) and (price > threshold_with_margin):
+        if (current_low <= threshold_with_offset) and (price > threshold_with_offset):
             return True
         else:
             time_diff = abs(data.index[-1] - recent.index[-1])
             if time_diff > pd.Timedelta(hours=4):
                 prev_close = data['close'].iloc[-1]
-                if (prev_close <= threshold_with_margin) and (price > threshold_with_margin):
+                if (prev_close <= threshold_with_offset) and (price > threshold_with_offset):
                     return True
         return False
 
-    def detect_upward_breakout_keeping(self, data, recent, metric, margin, bullish_breakout_metric, touch_metric):
+    def detect_upward_breakout_keeping(self, data, recent, metric, offset, bullish_breakout_metric, touch_metric):
         threshold = data[metric].iloc[-1]
-        threshold_with_margin = threshold + recent['close'].iloc[-1] * margin
+        threshold_with_offset = threshold + recent['close'].iloc[-1] * offset
         price = recent['close'].iloc[-1]
         bullish_breakout_keeping = (
-                price > threshold_with_margin
+                price > threshold_with_offset
                 and self.note.get(bullish_breakout_metric, [False])[-1]
         )
         if self.note.get(touch_metric, [False])[-1]:
@@ -231,13 +251,14 @@ class Maengja:
         buy = is_aligned and (is_at_least_one_touch or is_sma_breakthrough) and not is_bearish
         self.note.setdefault('buy', []).append(buy)
 
-        buy_reason = (
-                ('bb1' if is_bb1_touch else '') +
-                ('-' if is_bb2_touch and (is_bb2_touch or is_sma_breakthrough) else '') +
-                ('bb2' if is_bb2_touch else '') +
-                ('-' if is_bb2_touch and is_sma_breakthrough else '') +
-                ('sma' if is_sma_breakthrough else '')
-        )
+        buy_reason_parts = []
+        if is_bb1_touch:
+            buy_reason_parts.append('bb1')
+        if is_bb2_touch:
+            buy_reason_parts.append('bb2')
+        if is_sma_breakthrough:
+            buy_reason_parts.append('sma')
+        buy_reason = '-'.join(buy_reason_parts)
         self.note.setdefault('buy_reason', []).append(buy_reason)
 
         buy_strength = (
@@ -249,41 +270,53 @@ class Maengja:
         )
         self.note.setdefault('buy_strength', []).append(buy_strength)
 
-        stop_loss_candidates = []
-        stop_loss_name_candidates = []
-
+        stop_value_hubos = []
+        stop_key_hubos = []
         if is_bb1_touch:
-            stop_loss_candidates.append((data['close'].iloc[-1] * (100 - self.params['BB_trailing_stop_loss']) * 0.01))
-            stop_loss_name_candidates.append('bb1_lower')
+            stop_value_hubos.append(data['bb1_lower'].iloc[-1] * self.params['Trailing'])
+            stop_key_hubos.append('bb1_lower')
         if is_bb2_touch:
-            stop_loss_candidates.append((data['close'].iloc[-1] * (100 - self.params['BB_trailing_stop_loss']) * 0.01))
-            stop_loss_name_candidates.append('bb2_lower')
+            stop_value_hubos.append(data['bb2_lower'].iloc[-1] * self.params['Trailing'])
+            stop_key_hubos.append('bb2_lower')
         if is_sma_breakthrough:
             sma_name = self.note['SMA_below_close'][-1]
-            stop_loss_candidates.append(data[sma_name].iloc[-1])
-            stop_loss_name_candidates.append(sma_name)
+            stop_value_hubos.append(data[sma_name].iloc[-1]  * self.params['Trailing'])
+            stop_key_hubos.append(sma_name)
 
         if self.symbol in self.positions.assets:
-            stop_loss_candidates.append((self.positions.assets[self.symbol]['stop_loss']))
-            stop_loss_name_candidates.append(self.positions.assets[self.symbol]['stop_loss_name'])
+            stop_value_hubos.append((self.positions.assets[self.symbol]['stop_value']))
+            stop_key_hubos.append(self.positions.assets[self.symbol]['stop_key'])
 
-        if stop_loss_candidates:
-            stop_loss = max(stop_loss_candidates)
-            stop_loss_name = stop_loss_name_candidates[stop_loss_candidates.index(stop_loss)]
+        if stop_value_hubos:
+            stop_value = max(stop_value_hubos)
+            stop_key = stop_key_hubos[stop_value_hubos.index(stop_value)]
         else:
-            stop_loss = 0.0
-            stop_loss_name = ''
+            stop_value = 0.0
+            stop_key = ''
+
+        if buy:
+            if self.symbol in [sym for sym in self.positions.assets]:
+                if 'stop_trailing' in self.positions.assets[self.symbol]:
+                    stop_trailing = max(self.positions.assets[self.symbol]['stop_trailing'],
+                                        recent['close'].iloc[-1] * self.params['Trailing'])
+                else:
+                    stop_trailing = recent['close'].iloc[-1] * self.params['Trailing']
+            else:
+                stop_trailing = recent['close'].iloc[-1] * self.params['Trailing']
+        else:
+            stop_trailing = 0.0
 
         self.note.setdefault('price', []).append(recent['close'].iloc[-1])
-        self.note.setdefault('stop_loss', []).append(stop_loss)
-        self.note.setdefault('stop_loss_name', []).append(stop_loss_name)
+        self.note.setdefault('stop_value', []).append(stop_value)
+        self.note.setdefault('stop_key', []).append(stop_key)
+        self.note.setdefault('stop_trailing', []).append(stop_trailing)
         self.note.setdefault('trading_value', []).append(data.loc[self.current_hour, 'trading_value'])
 
     def detect_stoploss_downward_breakout(self, recent):
         if self.symbol not in self.positions.assets:
             self.note.setdefault('stoploss_downward_breakout', []).append(False)
             return
-        threshold = self.positions.assets[self.symbol]['stop_loss']
+        threshold = max(self.positions.assets[self.symbol]['stop_value'], self.positions.assets[self.symbol]['stop_trailing'])
         price = recent['close'].iloc[-1]
         bearish_breakout = price < threshold
         self.note.setdefault('stoploss_downward_breakout', []).append(bearish_breakout)
@@ -291,39 +324,37 @@ class Maengja:
     def resistance_upward_breakout(self, data, recent):
         if self.symbol not in self.positions.assets:
             self.note.setdefault('resistance_upward_breakout', []).append(False)
-            self.note.setdefault('new_stop_loss_candidate', []).append(0.0)
-            self.note.setdefault('new_stop_loss_name_candidate', []).append('')
+            self.note.setdefault('new_stop_value_hubo', []).append(0.0)
+            self.note.setdefault('new_stop_key_hubo', []).append('')
             return
         resistance_upward_breakout = False
-        current_stop_loss_name = self.positions.assets[self.symbol]['stop_loss_name']
-        current_stop_loss_value = data[current_stop_loss_name].iloc[-1]
-        new_stop_loss_candidate = current_stop_loss_value
-        new_stop_loss_name_candidate = current_stop_loss_name
-        for metric in self.sma_cols + ['bb1_upper', 'bb2_upper']:
+        current_stop_key = self.positions.assets[self.symbol]['stop_key']
+        current_stop_value = data[current_stop_key].iloc[-1] if current_stop_key != '' else 0.0
+        new_stop_value_hubo = current_stop_value
+        new_stop_key_hubo = current_stop_key
+        resistance_metrics = self.sma_cols + ['bb1_upper', 'bb2_upper']
+        for metric in resistance_metrics:
             metric_value = data[metric].iloc[-1]
-            if metric_value > current_stop_loss_value:
+            if metric_value > current_stop_value:
                 if self.detect_upward_breakout(data, recent, metric, 0):
                     resistance_upward_breakout = True
-                    new_stop_loss_candidate = metric_value
-                    new_stop_loss_name_candidate = metric
+                    new_stop_value_hubo = metric_value * self.params['Trailing']
+                    new_stop_key_hubo = metric
         self.note.setdefault('resistance_upward_breakout', []).append(resistance_upward_breakout)
-        self.note.setdefault('new_stop_loss_candidate', []).append(new_stop_loss_candidate)
-        self.note.setdefault('new_stop_loss_name_candidate', []).append(new_stop_loss_name_candidate)
+        self.note.setdefault('new_stop_value_hubo', []).append(new_stop_value_hubo)
+        self.note.setdefault('new_stop_key_hubo', []).append(new_stop_key_hubo)
 
     def top_resist_downward_break(self, data, recent):
         if self.symbol not in self.positions.assets:
             self.note.setdefault('top_resist_downward_break', []).append(False)
             return
-        current_resistances = [data[col].iloc[-1] for col in self.sma_cols] + [
-            data['bb1_upper'].iloc[-1], data['bb2_upper'].iloc[-1]
-        ]
-        current_high = recent['high'].iloc[-1]
+        resistance_metrics = self.sma_cols + ['bb1_upper', 'bb2_upper']
+        resistances = [data[metric].iloc[-1] for metric in resistance_metrics]
+        high = recent['high'].iloc[-1]
         price = recent['close'].iloc[-1]
-        high_resist_free = all(current_high <= resistance for resistance in current_resistances)
-        bearish_breakout = any(
-            current_high > resistance >= price for resistance in current_resistances
-        )
-        top_resist_downward_break = high_resist_free and bearish_breakout
+        is_high_resist_free = all(high > resistance for resistance in resistances)
+        bearish_breakout = any(high > resistance >= price for resistance in resistances)
+        top_resist_downward_break = is_high_resist_free and bearish_breakout
         self.note.setdefault('top_resist_downward_break', []).append(top_resist_downward_break)
 
     def update_sell_signal(self):
@@ -333,36 +364,50 @@ class Maengja:
             self.note.setdefault('keep_profit', []).append(False)
             return
 
+        #1. 손절가 매도
         do_stop_loss = self.note['stoploss_downward_breakout'][-1]
+
+        #2. 저항선 돌파시 익절 또는 보유. 보유시 손절지표 교체
         is_resistance_upward_breakout = self.note['resistance_upward_breakout'][-1]
         is_po_divergence_bullish = self.note['PO_divergence'][-1] > 0
         is_rsi_check_bullish = self.note['RSI_check'][-1] > 0
         is_bullish = is_po_divergence_bullish or is_rsi_check_bullish
+        do_take_profit = is_resistance_upward_breakout and not is_bullish
+        do_keep_profit = is_resistance_upward_breakout and is_bullish
+        if do_keep_profit:
+            change_stop_loss = self.note.get('new_stop_value_hubo',0)[-1] >= self.positions.assets[self.symbol]['stop_value']
+            if change_stop_loss:
+                self.positions.assets[self.symbol]['stop_value'] = self.note.get('new_stop_value_hubo',0)[-1]
+                self.positions.assets[self.symbol]['stop_key'] = self.note.get('new_stop_key_hubo','')[-1]
+
+        #3. 최상위저항선 하향돌파시 매도
+        top_resist_downward_break = self.note['top_resist_downward_break'][-1]
+
+        #4. 장종료시 매도
         now = self.note['time'][-1]
         is_now_end_of_day = (
                 (now.hour, now.minute) == self.market_end_time
                 and self.symbol not in self.positions.assets.keys()
         )
-        do_take_profit = is_resistance_upward_breakout and not is_bullish
-        top_resist_downward_break = self.note['top_resist_downward_break'][-1]
-        do_keep_profit = is_resistance_upward_breakout and is_bullish
-        if do_keep_profit:
-            self.positions.assets[self.symbol]['stop_loss'] = max(
-                self.positions.assets[self.symbol]['stop_loss'],
-                self.note.get('new_stop_loss',0)
-            )
+
+        # 매도신호 정리
         sell = (
                 (do_stop_loss or do_take_profit or top_resist_downward_break or is_now_end_of_day)
                 and not do_keep_profit
-                and not self.note.get('buy',[False])[-1]
         )
         self.note.setdefault('sell', []).append(sell)
-        sell_reason = (
-                ('|StopLoss|' if do_stop_loss else '') +
-                ('|TakeProfit|' if do_take_profit else '') +
-                ('|ResistFree|' if top_resist_downward_break else '') +
-                ('|EndMarket|' if is_now_end_of_day else '')
-        )
+
+        sell_reasons = []
+        if do_stop_loss:
+            sell_reasons.append('StopLoss')
+        if do_take_profit:
+            sell_reasons.append('TakeProfit')
+        if top_resist_downward_break:
+            sell_reasons.append('TopResistBreak')
+        if is_now_end_of_day:
+            sell_reasons.append('EndMarket')
+        sell_reason = '|' + '|'.join(sell_reasons) + '|' if sell_reasons else ''
+
         self.note.setdefault('sell_reason', []).append(sell_reason)
         self.note.setdefault('keep_profit', []).append(do_keep_profit)
 
@@ -370,46 +415,3 @@ class Maengja:
         for key in self.note:
             if len(self.note[key]) > self.params["note_list_limit"]:
                 self.note[key] = self.note[key][-self.params["note_list_limit"]:]
-
-
-
-
-
-# def update_stop_loss(self, data, recent):
-#     """Update stop-loss for the symbol in the portfolio."""
-#     if self.symbol not in self.positions.assets:
-#         return
-#     trailing_stop = data['close'].iloc[-1] * (1 - self.params["BB_trailing_stop_loss"] / 100)
-#     change_stop_loss = self.positions.assets[self.symbol]['stop_loss'] >= trailing_stop
-#     if change_stop_loss:
-#         self.positions.assets[self.symbol]['stop_loss'] = trailing_stop
-#         self.positions.assets[self.symbol]['stop_loss_name'] = "trailing_stop"
-#     self.positions.assets[self.symbol]['price'] = recent['close'].iloc[-1]
-#
-# class MaengjaTrailing(Maengja):
-#     def __init__(self, symbol):
-#         super().__init__(symbol)
-#
-#     def update_stop_loss(self, data, recent):
-#         """Override stop-loss update with trailing logic."""
-#         if self.symbol in self.positions.assets:
-#             trailing_stop = data['close'].iloc[-1] * (1 - self.params["BB_trailing_stoploss"] / 100)
-#             self.positions.assets[self.symbol]['stop_loss'] = max(
-#                 self.positions.assets[self.symbol]['stop_loss'], trailing_stop
-#             )
-#             self.positions.assets[self.symbol]['price'] = recent['close'].iloc[-1]
-#
-#
-# class MaengjaTrailingNoSellEnd(MaengjaTrailing):
-#     def __init__(self, symbol):
-#         super().__init__(symbol)
-#
-#     def update_sell_signal(self, data, recent):
-#         """Exclude end-of-day selling logic."""
-#         stop_loss_hit = self.note.get('stoploss_downward_breakout', [False])[-1]
-#         resistance_break = self.note.get('resistance_upward_breakout', [False])[-1]
-#
-#         sell_signal = stop_loss_hit or resistance_break
-#         self.note.setdefault('sell', []).append(sell_signal)
-#
-#

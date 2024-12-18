@@ -22,6 +22,8 @@ class Fetcher:
             history = self.local_handler.get_stock_history_from_local_data(symbols, start, end, time_frame, timezone)
         else:
             df_history = self.api_fetcher.get_stock_history(symbols, start, end, time_frame)
+            if df_history.empty:
+                return {}
             grouped = df_history.groupby(level='symbol')
             history = {symbol: group.reset_index(level='symbol', drop=True) for symbol, group in grouped}
 
@@ -38,10 +40,11 @@ class ApiDataFetcher:
 
     def get_stock_history(self, symbols, start, end, time_frame):
         stock_client = self.client_manager.get_client(ClientType.STOCK_HISTORY)
+        time_margin = pd.Timedelta(seconds=10)
         request_params = StockBarsRequest(
             symbol_or_symbols=symbols,
             timeframe=time_frame,
-            start=start.to_pydatetime(),
+            start=(start-time_margin).to_pydatetime(),
             end=end.to_pydatetime(),
             feed=DataFeed.SIP,
             adjustment=Adjustment.SPLIT

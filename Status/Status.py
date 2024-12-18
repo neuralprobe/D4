@@ -39,7 +39,7 @@ class AccountLive(AccountBase):
         super().__init__()
         self.positions = PositionLive()
         self.trading_client = ClientManager().get_client(ClientType.TRADE)
-        self.order_list = OrderList()
+        self.order_list = OrderList(True)
 
     def get_total_value(self):
         self.positions.update()
@@ -57,17 +57,16 @@ class PositionBase(metaclass=SingletonMeta):
         self.value = 0.0
 
     def print_positions(self):
-        """Print the current positions."""
-        if self.assets:
-            print("Positions:")
-            for symbol, data in self.assets.items():
-                print(
-                    f"{symbol} | Time: {data['time']} | "
-                    f"Price: {r2(data['price'])} | AvgPrice: {r2(data['avg_price'])} | Qty: {r2(data['qty'])} | Value: {r2(data['market_value'])} | "
-                    f"StopLoss: {r2(data['stop_loss'])} | StopLossName: {data['stop_loss_name']}"
-                )
+        if len(self.assets.keys()):
+            print("보유종목/수량/평균가/현재가/추적손절가/손절가/손절지표:", [(symbol,
+                                                        r2(self.assets[symbol]['qty']),
+                                                        r2(self.assets[symbol]['avg_price']),
+                                                        r2(self.assets[symbol]['price']),
+                                                        r2(self.assets[symbol]['stop_trailing']),
+                                                        r2(self.assets[symbol]['stop_value']),
+                                                        self.assets[symbol]['stop_key'],)  for symbol in self.assets.keys()])
         else:
-            print("Position is empty.")
+            print("보유종목: 없음")
 
 
 class PositionLocal(PositionBase):
@@ -85,15 +84,17 @@ class PositionLocal(PositionBase):
             self.assets[symbol]['market_value'] = new_asset['price'] * self.assets[symbol]['qty']
             self.assets[symbol]['cost'] += new_asset['cost']
             self.assets[symbol]['avg_price'] = self.assets[symbol]['cost'] / self.assets[symbol]['qty']
-            self.assets[symbol]['stop_loss'] = max(self.assets[symbol]['stop_loss'], new_asset['stop_loss'])
-            self.assets[symbol]['stop_loss_name'] = new_asset['stop_loss_name']
+            self.assets[symbol]['stop_value'] = max(self.assets[symbol]['stop_value'], new_asset['stop_value'])
+            self.assets[symbol]['stop_key'] = new_asset['stop_key']
+            self.assets[symbol]['stop_trailing'] = max(self.assets[symbol]['stop_trailing'], new_asset['stop_trailing'])
 
         else:
             self.assets[symbol] = dict(time=new_asset['time'], price=new_asset['price'],
                                        avg_price=new_asset['cost'] / new_asset['qty'],
                                        qty=new_asset['qty'],
                                        market_value=new_asset['cost'], cost=new_asset['cost'],
-                                       stop_loss=new_asset['stop_loss'], stop_loss_name=new_asset['stop_loss_name'])
+                                       stop_value=new_asset['stop_value'], stop_key=new_asset['stop_key'],
+                                       stop_trailing=new_asset['stop_trailing'])
 
     def remove_asset(self, symbol):
         """Remove an asset from the positions."""
@@ -109,17 +110,8 @@ class PositionLocal(PositionBase):
             self.assets[symbol]['price'] = price
             self.assets[symbol]['market_value'] = new_market_value
             self.value = self.value + new_market_value - prev_market_value
-
-    def print_positions(self):
-        if len(self.assets.keys()):
-            print("보유종목/수량/평균가/현재가/손절가/손절지표:", [(symbol,
-                                                        r2(self.assets[symbol]['qty']),
-                                                        r2(self.assets[symbol]['avg_price']),
-                                                        r2(self.assets[symbol]['price']),
-                                                        r2(self.assets[symbol]['stop_loss']),
-                                                        self.assets[symbol]['stop_loss_name'])  for symbol in self.assets.keys()])
-        else:
-            print("보유종목: 없음")
+        if not self.assets:
+            self.value = 0.0
 
 
 class PositionLive(PositionBase):
@@ -128,63 +120,90 @@ class PositionLive(PositionBase):
         super().__init__()
         self.trading_client = ClientManager().get_client(ClientType.TRADE)
         self.assets_info = {}
-
-    def update(self):
-        positions = self.trading_client.get_all_positions()
-        self.value = 0.0
-        for asset in positions:
-            self.value += float(asset.market_value)
-            if asset.symbol in self.assets:
-                asset_info = self.assets[asset.symbol]
-                asset_info['price'] = float(asset.current_price)
-                asset_info['avg_price'] = float(asset.avg_entry_price)
-                asset_info['qty'] = float(asset.qty)
-                asset_info['market_value'] = float(asset.market_value)
-                asset_info['cost'] = float(asset.cost_basis)
-                if asset.symbol in self.assets_info:
-                    asset_info['stop_loss'] = self.assets_info[asset.symbol]['stop_loss']
-                    asset_info['stop_loss_name'] = self.assets_info[asset.symbol]['stop_loss_name']
-                asset_info['valid'] = True
-            else:
-                if asset.symbol in self.assets_info:
-                    self.assets[asset.symbol] = dict(time=pd.Timestamp.now(tz='America/New_York'),
-                                                     price=float(asset.current_price), qty=float(asset.qty),
-                                                     cost=float(asset.cost_basis), avg_price=float(asset.avg_entry_price),
-                                                     stop_loss=self.assets_info[asset.symbol]['stop_loss'],
-                                                     stop_loss_name=self.assets_info[asset.symbol]['stop_loss_name'],
-                                                     valid=True)
-                else:
-                    self.assets[asset.symbol] = dict(time=pd.Timestamp.now(tz='America/New_York'),
-                                                     price=float(asset.current_price), qty=float(asset.qty),
-                                                     cost=float(asset.cost_basis),
-                                                     avg_price=float(asset.avg_entry_price),
-                                                     stop_loss=0.0,
-                                                     stop_loss_name='',
-                                                     valid=True)
-        invalid_symbols = [symbol for symbol in self.assets if not self.assets[symbol]['valid']]
-        for symbol in invalid_symbols:
-            del self.assets[symbol]
+        self.Trailing = (1.0-0.002)
 
     def add_new_asset(self, new_asset):
         symbol = new_asset['symbol']
-        self.assets_info[symbol] = dict(stop_loss=new_asset['stop_loss'], stop_loss_name=new_asset['stop_loss_name'])
+        self.assets_info[symbol] = dict(stop_value=new_asset['stop_value'], stop_key=new_asset['stop_key'], stop_trailing=new_asset['stop_trailing'])
 
     def remove_asset(self, symbol):
         """Remove an asset from the positions."""
-        if symbol in self.assets_info:
-            del self.assets_info[symbol]
+        try:
+            symbols = self.assets_info.keys()
+            if symbol in symbols:
+                del self.assets_info[symbol]
+        except Exception as e:
+            print(f"remove_asset error occurred for {symbol}: {e}")
+            x=1
+
+    def update(self):
+        positions = self.trading_client.get_all_positions()
+        symbols = [asset.symbol for asset in positions]
+        self.value = 0.0
+        try:
+            for asset in positions:
+                self.value += float(asset.market_value)
+                if asset.symbol in self.assets:
+                    asset_info = self.assets[asset.symbol]
+                    asset_info['price'] = float(asset.current_price)
+                    asset_info['avg_price'] = float(asset.avg_entry_price)
+                    asset_info['qty'] = float(asset.qty)
+                    asset_info['market_value'] = float(asset.market_value)
+                    asset_info['cost'] = float(asset.cost_basis)
+                    if asset.symbol in self.assets_info:
+                        asset_info['stop_value'] = self.assets_info[asset.symbol]['stop_value']
+                        asset_info['stop_key'] = self.assets_info[asset.symbol]['stop_key']
+                        asset_info['stop_trailing'] = self.assets_info[asset.symbol]['stop_trailing']
+                    else:
+                        asset_info['stop_value'] = 0.0
+                        asset_info['stop_key'] = ''
+                        asset_info['stop_trailing'] = float(asset.current_price) * self.Trailing
+                    asset_info['valid'] = True
+                else:
+                    if asset.symbol in self.assets_info:
+                        self.assets[asset.symbol] = dict(time=pd.Timestamp.now(tz='America/New_York'),
+                                                         price=float(asset.current_price), qty=float(asset.qty),
+                                                         cost=float(asset.cost_basis), avg_price=float(asset.avg_entry_price),
+                                                         stop_value=self.assets_info[asset.symbol]['stop_value'],
+                                                         stop_key=self.assets_info[asset.symbol]['stop_key'],
+                                                         stop_trailing=self.assets_info[asset.symbol]['stop_trailing'],
+                                                         valid=True)
+                    else:
+                        self.assets[asset.symbol] = dict(time=pd.Timestamp.now(tz='America/New_York'),
+                                                         price=float(asset.current_price), qty=float(asset.qty),
+                                                         cost=float(asset.cost_basis),
+                                                         avg_price=float(asset.avg_entry_price),
+                                                         stop_value=0.0,
+                                                         stop_key='',
+                                                         stop_trailing= float(asset.current_price) * self.Trailing,
+                                                         valid=True)
+        except Exception as e:
+            print(f"remove_asset error 1 occurred : {e}")
+            x=1
+        try:
+            asset_symbols=list(self.assets.keys())
+            for symbol in asset_symbols:
+                if symbol not in symbols:
+                    del self.assets[symbol]
+        except Exception as e:
+            print(f"remove_asset error 2 occurred for {symbol}: {e}")
+            x=1
 
 class OrderList(metaclass=SingletonMeta):
     """Class for managing trading orders."""
-    def __init__(self):
+    def __init__(self, live):
         self.trading_client = ClientManager().get_client(ClientType.TRADE)
-        self.orders_open = []
+        self.orders = {}
+        self.live = live
 
-    def check_open(self):
-        """Update the open and closed orders."""
-        self.orders_open = self.trading_client.get_orders(
-            filter=GetOrdersRequest(
-                status=QueryOrderStatus.OPEN, limit=100, nested=True
-            )
-        )
-        return len(self.orders_open)
+    def update(self):
+        if not self.live:
+            return
+        del_arr = []
+        for symbol, uid in self.orders.items():
+            my_order = self.trading_client.get_order_by_client_id(uid)
+            assert(my_order.symbol == symbol)
+            if my_order.filled_at!=None:
+                del_arr.append(symbol)
+        for el in del_arr:
+            del self.orders[el]
