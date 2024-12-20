@@ -56,7 +56,7 @@ class TraderLocal:
         self.data_manager.fetch_history(symbols, self.time_manager.current, self.time_manager.timezone)
         self.strategy_manager.initialize_strategies(symbols)
         self.csv_name = file_name + f"_{start}_{end}_{datetime.now(pytz.timezone('America/New_York')).strftime('%Y-%m-%d %H:%M:%S')}.csv"
-
+        self.csv_name = self.csv_name.replace(":", "-")
 
 if __name__ == "__main__":
     trader = TraderLocal()

@@ -70,7 +70,7 @@ class TraderLive:
         self.time_manager.sync_current()
         self.strategy_manager.initialize_strategies(symbols)
         self.csv_name = file_name + f"_{start}_{end}_{datetime.now(pytz.timezone('America/New_York')).strftime('%Y-%m-%d %H:%M:%S')}.csv"
-
+        self.csv_name = self.csv_name.replace(":", "-")
 
 if __name__ == "__main__":
     trader = TraderLive()
