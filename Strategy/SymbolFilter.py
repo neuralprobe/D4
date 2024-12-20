@@ -17,6 +17,7 @@ class AssetFilter:
     def __init__(self, filter_type, file_path):
         self.filter_type = filter_type
         self.file_path = file_path
+        self.file_path = self.file_path.replace(":", "-")
 
     def read_existing_symbols(self):
         """Read existing symbols from file."""
