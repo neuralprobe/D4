@@ -9,8 +9,10 @@ from Common.Common import SingletonMeta, r2
 class BuyerBase(metaclass=SingletonMeta):
     """Base class for buying operations."""
 
-    def __init__(self, trade_cfg):
+    def __init__(self, trade_cfg, logger, time_manager):
         self.one_time_invest_ratio = trade_cfg['one_time_invest_ratio']
+        self.logger = logger
+        self.time_manager = time_manager
 
     def buy(self, prophecy, buy_symbol):
         pass
@@ -20,8 +22,8 @@ class BuyerBase(metaclass=SingletonMeta):
 
 class BuyerLocal(BuyerBase):
 
-    def __init__(self, trade_cfg):
-        super().__init__(trade_cfg)
+    def __init__(self, trade_cfg, logger, time_manager):
+        super().__init__(trade_cfg, logger, time_manager)
         self.account = AccountLocal()
 
     def buy(self, prophecy, buy_symbol, order_list):
@@ -38,12 +40,17 @@ class BuyerLocal(BuyerBase):
                                  stop_value=buy_symbol_df['stop_value'].iloc[-1],
                                  stop_key=buy_symbol_df['stop_key'].iloc[-1],
                                  stop_trailing=buy_symbol_df['stop_trailing'].iloc[-1])
+        if not self.logger.initiated:
+            self.logger("시간, 매매, 종목, 수량, 현재가, 평균가, 현금변화, 이익")
+            self.logger.initiated = True
         if buy_symbol in self.account.positions.assets:
-            print(f"매수:{buy_symbol}, 수량:{r2(qty)}, 매수가:{r2(price)}, "
-                  f"평균가:{r2(self.account.positions.assets[buy_symbol]['avg_price'])}, "
-                  f"비용 :{r2(cost)}")
+            self.logger(f"{self.time_manager.current.tz_localize(None)}, BUY, {buy_symbol}, {r2(qty)}, {r2(price)}, "
+                        f"{r2(self.account.positions.assets[buy_symbol]['avg_price'])}, "
+                        f"{-r2(cost)}, {r2(0.0)}")
         else:
-            print(f"매수:{buy_symbol}, 수량:{r2(qty)}, 매수가:{r2(price)}, 비용 :{r2(cost)}")
+            self.logger(f"{self.time_manager.current.tz_localize(None)}, BUY, {buy_symbol}, {r2(qty)}, {r2(price)}, "
+                        f"{r2(price)}, "
+                        f"{-r2(cost)}, {r2(0.0)}")
         self.account.positions.add_new_asset(market_order_data)
         self.account.update(-cost)
         return True
@@ -56,8 +63,8 @@ class BuyerLocal(BuyerBase):
 
 class BuyerLive(BuyerBase):
 
-    def __init__(self, trade_cfg):
-        super().__init__(trade_cfg)
+    def __init__(self, trade_cfg, logger, time_manager):
+        super().__init__(trade_cfg, logger, time_manager)
         self.account = AccountLive()
 
     def buy(self, prophecy, buy_symbol, order_list):
@@ -85,14 +92,19 @@ class BuyerLive(BuyerBase):
             order=self.account.trading_client.submit_order(order_data=market_order_data)
             order_list.orders[buy_symbol]=order.client_order_id
         except Exception as e:
-            print(f"Buy error occurred for {buy_symbol}: {e}")
+            self.logger(f"Buy error occurred for {buy_symbol}: {e}")
 
+        if not self.logger.initiated:
+            self.logger("시간, 매매, 종목, 수량, 현재가, 평균가, 현금변화, 이익")
+            self.logger.initiated = True
         if buy_symbol in self.account.positions.assets:
-            print(f"매수:{buy_symbol}, 수량:{r2(qty)}, 매수가:{r2(price)}, "
-                  f"평균가:{r2(self.account.positions.assets[buy_symbol]['avg_price'])}, "
-                  f"비용 :{r2(cost)}")
+            self.logger(f"{self.time_manager.current.tz_localize(None)}, BUY, {buy_symbol}, {r2(qty)}, {r2(price)}, "
+                        f"{r2(self.account.positions.assets[buy_symbol]['avg_price'])}, "
+                        f"{-r2(cost)}, {r2(0.0)}")
         else:
-            print(f"매수:{buy_symbol}, 수량:{r2(qty)}, 매수가:{r2(price)}, 비용 :{r2(cost)}")
+            self.logger(f"{self.time_manager.current.tz_localize(None)}, BUY, {buy_symbol}, {r2(qty)}, {r2(price)}, "
+                        f"{r2(price)}, "
+                        f"{-r2(cost)}, {r2(0.0)}")
         self.account.positions.add_new_asset(market_order_info)
         time.sleep(1)
         self.account.update()
@@ -106,8 +118,9 @@ class BuyerLive(BuyerBase):
 class SellerBase(metaclass=SingletonMeta):
     """Base class for selling operations."""
 
-    def __init__(self):
-        pass
+    def __init__(self, logger, time_manager):
+        self.logger = logger
+        self.time_manager = time_manager
 
     def sell(self, prophecy, sell_symbol):
         pass
@@ -115,8 +128,8 @@ class SellerBase(metaclass=SingletonMeta):
 
 class SellerLocal(SellerBase):
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, logger, time_manager):
+        super().__init__(logger, time_manager)
         self.account = AccountLocal()
 
     def sell(self, prophecy, sell_symbol, order_list):
@@ -127,15 +140,20 @@ class SellerLocal(SellerBase):
         market_value = self.account.positions.assets[sell_symbol]['market_value']
         cost = self.account.positions.assets[sell_symbol]['cost']
         avg_price = self.account.positions.assets[sell_symbol]['avg_price']
-        print(f"매도:{sell_symbol}, 수량:{r2(qty)}, 매도가:{r2(price)}, 평균가:{r2(avg_price)}, 이익:{r2(market_value-cost)}")
+        if not self.logger.initiated:
+            self.logger("시간, 매매, 종목, 수량, 현재가, 평균가, 현금변화, 이익")
+            self.logger.initiated = True
+        self.logger(f"{self.time_manager.current.tz_localize(None)}, SELL, {sell_symbol}, {r2(qty)}, {r2(price)}, "
+                    f"{r2(avg_price)}, "
+                    f"{r2(market_value)}, {r2(market_value-cost)}")
         self.account.positions.remove_asset(sell_symbol)
         self.account.update(market_value)
         return True
 
 class SellerLive(SellerBase):
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, logger, time_manager):
+        super().__init__(logger, time_manager)
         self.account = AccountLive()
 
     def sell(self, prophecy, sell_symbol, order_list):
@@ -144,7 +162,7 @@ class SellerLive(SellerBase):
                 return False
             self.account.update()
         except Exception as e:
-            print(f"Sell error 1 occurred for {sell_symbol}: {e}")
+            self.logger(f"Sell error 1 occurred for {sell_symbol}: {e}")
             x = 1
         try:
             price = self.account.positions.assets[sell_symbol]['price']
@@ -153,7 +171,7 @@ class SellerLive(SellerBase):
             cost = self.account.positions.assets[sell_symbol]['cost']
             avg_price = self.account.positions.assets[sell_symbol]['avg_price']
         except Exception as e:
-            print(f"Sell error 2 occurred for {sell_symbol}: {e}")
+            self.logger(f"Sell error 2 occurred for {sell_symbol}: {e}")
             x = 1
         try:
             market_order_data = MarketOrderRequest(
@@ -166,15 +184,20 @@ class SellerLive(SellerBase):
             order = self.account.trading_client.submit_order(order_data=market_order_data)
             order_list.orders[sell_symbol] = order.client_order_id
         except Exception as e:
-            print(f"Sell error 3 occurred for {sell_symbol}: {e}")
+            self.logger(f"Sell error 3 occurred for {sell_symbol}: {e}")
             x = 1
         try:
-            print(f"매도:{sell_symbol}, 수량:{r2(qty)}, 매도가:{r2(price)}, 평균가:{r2(avg_price)}, 이익:{r2(market_value - cost)}")
+            if not self.logger.initiated:
+                self.logger("시간, 매매, 종목, 수량, 현재가, 평균가, 현금변화, 이익")
+                self.logger.initiated = True
+            self.logger(f"{self.time_manager.current.tz_localize(None)}, SELL, {sell_symbol}, {r2(qty)}, {r2(price)}, "
+                        f"{r2(avg_price)}, "
+                        f"{r2(market_value)}, {r2(market_value - cost)}")
             time.sleep(1)
             self.account.positions.remove_asset(sell_symbol)
             self.account.update()
             return True
 
         except Exception as e:
-            print(f"Sell error 4 occurred for {sell_symbol}: {e}")
+            self.logger(f"Sell error 4 occurred for {sell_symbol}: {e}")
             x=1

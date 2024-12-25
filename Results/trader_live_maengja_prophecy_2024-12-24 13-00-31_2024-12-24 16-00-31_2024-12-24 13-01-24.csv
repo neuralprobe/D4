@@ -1,0 +1,6 @@
+,시간,종목,bb1돌파1,bb1돌파2,bb1아래,bb2아래,bb2돌파1,bb1터치,bb2돌파2,RSI다이버,정배열,SMA돌파,종가밑SMA,매수의견,매수근거,매수강도,price,손절가,손절근거,추적손절가,거래대금,손절가터치,저항선터치,손절가후보,손절가후보근거,무저항매도,매도의견,매도근거,보유의견
+0,2024-12-24 18:05:00+00:00,BA,False,False,False,False,False,False,0,0,1.0,1,SMA_60,True,sma,1,179.29,175.46,SMA_60,177.5,169827460.16,False,True,177.37,SMA_5,False,True,|TakeProfit|,False
+1,2024-12-24 18:08:00+00:00,RGTI,False,False,False,False,False,False,0,0,1.0,0,,False,,0,11.4,0.0,,0.0,3415385.06,False,True,11.25,SMA_5,False,True,|TakeProfit|,False
+2,2024-12-24 18:14:00+00:00,GBTC,False,False,False,False,False,False,0,0,0.2,0,,False,,0,78.85,0.0,,0.0,478511.55,False,True,77.97,bb1_upper,False,True,|TakeProfit|,False
+3,2024-12-24 19:32:00+00:00,V,False,False,False,False,True,False,0,0,1.0,1,SMA_20,True,sma,1,321.0,314.06,SMA_20,317.79,268881819.84,False,True,317.73,bb1_upper,False,True,|TakeProfit|,False
+4,2024-12-24 20:55:00+00:00,PLTR,False,False,False,False,False,False,0,0,1.0,1,SMA_20,True,sma,1,82.57,80.08,SMA_20,81.74,939052915.2,False,True,81.71,SMA_5,False,True,|TakeProfit|,False

@@ -1,14 +1,19 @@
+from os import access
+
 import pandas as pd
 from alpaca.trading.enums import QueryOrderStatus
 from alpaca.trading.requests import GetOrdersRequest
 from ApiAccess.ApiAccess import ClientType, ClientManager
 from Common.Common import SingletonMeta, r2
-
+from Common.Logger import Logger
 
 class AccountBase(metaclass=SingletonMeta):
     """Base class for account management."""
-    def __init__(self):
+    def __init__(self, acc_logfile=None, time_manager=None):
         self.cash = 0
+        self.logger = Logger(acc_logfile)
+        self.time = time_manager
+        self.positions = None
 
     def get_total_value(self):
         pass
@@ -16,12 +21,29 @@ class AccountBase(metaclass=SingletonMeta):
     def update(self, change = 0):
         pass
 
+    def print(self):
+        if not self.logger.initiated:
+            self.logger("시간, 총평가가치, 현금, 평가금액, 보유종목, 수량, 평균가, 현재가, 추적손절가, 손절가, 손절지표")
+            self.logger.initiated = True
+        if len(self.positions.assets.keys()):
+            for symbol in self.positions.assets.keys():
+                self.logger(f"{self.time.current.tz_localize(None)}, {r2(self.get_total_value())}, {r2(self.cash)}, {r2(self.positions.value)}, "
+                            f"{symbol}, {r2(self.positions.assets[symbol]['qty'])}, {r2(float(self.positions.assets[symbol]['avg_price'])) }, "
+                            f"{r2(float(self.positions.assets[symbol]['price']))}, {r2(float(self.positions.assets[symbol]['stop_trailing'])) }, "
+                            f"{r2(float(self.positions.assets[symbol]['stop_value']))}, {self.positions.assets[symbol]['stop_key']}")
+        else:
+            self.logger(
+                f"{self.time.current.tz_localize(None)}, {r2(self.get_total_value())}, {r2(self.cash)}, {r2(self.positions.value)}, "
+                f"None, {r2(0.0)}, {r2(0.0)}, "
+                f"{r2(0.0)}, {r2(0.0)}, "
+                f"{r2(0.0)}, None")
+
 
 class AccountLocal(AccountBase):
     """Simulated account class."""
-    def __init__(self):
-        super().__init__()
-        self.positions = PositionLocal()
+    def __init__(self, acc_logfile=None, time_manager=None):
+        super().__init__(acc_logfile, time_manager)
+        self.positions = PositionLocal(acc_logfile)
 
     def get_total_value(self):
         return self.cash + self.positions.value
@@ -32,12 +54,11 @@ class AccountLocal(AccountBase):
     def update(self, change = 0):
         self.cash += change
 
-
 class AccountLive(AccountBase):
     """Live account class."""
-    def __init__(self):
-        super().__init__()
-        self.positions = PositionLive()
+    def __init__(self, acc_logfile=None, time_manager=None):
+        super().__init__(acc_logfile, time_manager)
+        self.positions = PositionLive(acc_logfile)
         self.trading_client = ClientManager().get_client(ClientType.TRADE)
         self.order_list = OrderList(True)
 
@@ -52,27 +73,15 @@ class AccountLive(AccountBase):
 
 class PositionBase(metaclass=SingletonMeta):
     """Base class for position management."""
-    def __init__(self):
+    def __init__(self, logfile=None):
         self.assets = {}
         self.value = 0.0
-
-    def print_positions(self):
-        if len(self.assets.keys()):
-            print("보유종목/수량/평균가/현재가/추적손절가/손절가/손절지표:", [(symbol,
-                                                        r2(self.assets[symbol]['qty']),
-                                                        r2(self.assets[symbol]['avg_price']),
-                                                        r2(self.assets[symbol]['price']),
-                                                        r2(self.assets[symbol]['stop_trailing']),
-                                                        r2(self.assets[symbol]['stop_value']),
-                                                        self.assets[symbol]['stop_key'],)  for symbol in self.assets.keys()])
-        else:
-            print("보유종목: 없음")
-
+        self.logger = Logger(logfile)
 
 class PositionLocal(PositionBase):
     """Simulated position class."""
-    def __init__(self):
-        super().__init__()
+    def __init__(self, logfile=None):
+        super().__init__(logfile)
 
     def add_new_asset(self, new_asset):
         """Add a new asset or update an existing one."""
@@ -116,11 +125,11 @@ class PositionLocal(PositionBase):
 
 class PositionLive(PositionBase):
     """Live position class."""
-    def __init__(self):
-        super().__init__()
+    def __init__(self, logfile=None):
+        super().__init__(logfile)
         self.trading_client = ClientManager().get_client(ClientType.TRADE)
         self.assets_info = {}
-        self.Trailing = (1.0-0.002)
+        self.Trailing = (1.0-0.01)
 
     def add_new_asset(self, new_asset):
         symbol = new_asset['symbol']
@@ -133,7 +142,7 @@ class PositionLive(PositionBase):
             if symbol in symbols:
                 del self.assets_info[symbol]
         except Exception as e:
-            print(f"remove_asset error occurred for {symbol}: {e}")
+            self.logger(f"remove_asset error occurred for {symbol}: {e}")
             x=1
 
     def update(self):
@@ -178,7 +187,7 @@ class PositionLive(PositionBase):
                                                          stop_trailing= float(asset.current_price) * self.Trailing,
                                                          valid=True)
         except Exception as e:
-            print(f"remove_asset error 1 occurred : {e}")
+            self.logger(f"remove_asset error 1 occurred : {e}")
             x=1
         try:
             asset_symbols=list(self.assets.keys())
@@ -186,7 +195,7 @@ class PositionLive(PositionBase):
                 if symbol not in symbols:
                     del self.assets[symbol]
         except Exception as e:
-            print(f"remove_asset error 2 occurred for {symbol}: {e}")
+            self.logger(f"remove_asset error 2 occurred for {symbol}: {e}")
             x=1
 
 class OrderList(metaclass=SingletonMeta):

@@ -49,33 +49,33 @@ class Time:
     current: pd.Timestamp = field(default_factory=pd.Timestamp.now)
 
 
-class Tee:
-    _instance = None  # 싱글톤 인스턴스
+# class Tee:
+#     _instance = None  # 싱글톤 인스턴스
+#
+#     def __new__(cls, *files):
+#         if not cls._instance:
+#             cls._instance = super().__new__(cls)
+#             cls._instance.files = files
+#         return cls._instance
+#
+#     def write(self, obj):
+#         for f in self.files:
+#             f.write(obj)
+#
+#     def flush(self):
+#         for f in self.files:
+#             f.flush()
 
-    def __new__(cls, *files):
-        if not cls._instance:
-            cls._instance = super().__new__(cls)
-            cls._instance.files = files
-        return cls._instance
 
-    def write(self, obj):
-        for f in self.files:
-            f.write(obj)
-
-    def flush(self):
-        for f in self.files:
-            f.flush()
-
-
-def setup_logging(file_name, start, end):
-    """stdout을 파일과 콘솔에 동시에 출력하도록 설정."""
-    D4_loc = os.environ.get('D4')
-    results = f"{D4_loc}/Results/"
-    logfile_path = results + file_name + f"_{start}_{end}_{datetime.now(pytz.timezone('America/New_York')).strftime('%Y-%m-%d %H:%M:%S')}.txt"
-    logfile = open(logfile_path, 'w')
-    tee = Tee(sys.stdout, logfile)
-    sys.stdout = tee
-    return logfile  # 파일 닫기를 위해 반환
+# def setup_logging(file_name, start, end):
+#     """stdout을 파일과 콘솔에 동시에 출력하도록 설정."""
+#     D4_loc = os.environ.get('D4')
+#     results = f"{D4_loc}/Results/"
+#     logfile_path = results + file_name + f"_{start}_{end}_{datetime.now(pytz.timezone('America/New_York')).strftime('%Y-%m-%d %H:%M:%S')}.txt"
+#     logfile = open(logfile_path, 'w')
+#     tee = Tee(sys.stdout, logfile)
+#     sys.stdout = tee
+#     return logfile  # 파일 닫기를 위해 반환
 
 
 class SingletonMeta(type):
@@ -140,4 +140,3 @@ class Printer:
         )
 
         prophecy_history.to_csv(f"{os.environ.get('D4')}/Results/{filename}")
-

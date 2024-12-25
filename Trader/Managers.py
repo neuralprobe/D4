@@ -10,6 +10,7 @@ from Strategy.Maengja import Maengja
 from Strategy.SymbolFilter import EquityFilter
 import pandas_market_calendars as Calender
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from Common.Logger import Logger
 
 
 class TimeManager:
@@ -24,15 +25,15 @@ class TimeManager:
         self.close_time = (16, 0)
 
     def set_period(self, start, end):
-        self.start = pd.Timestamp(start, tz=self.timezone)
-        self.current = pd.Timestamp(start, tz=self.timezone)
-        self.end = pd.Timestamp(end, tz=self.timezone)
+        self.start = pd.Timestamp(start, tz=self.timezone).replace(microsecond=0)
+        self.current = pd.Timestamp(start, tz=self.timezone).replace(microsecond=0)
+        self.end = pd.Timestamp(end, tz=self.timezone).replace(microsecond=0)
 
     def advance_current(self, minutes=1):
-        self.current += pd.Timedelta(minutes=minutes)
+        self.current += pd.Timedelta(minutes=minutes).replace(microsecond=0)
 
     def sync_current(self):
-        self.current = pd.Timestamp.now(tz=self.timezone)
+        self.current = pd.Timestamp.now(tz=self.timezone).replace(microsecond=0)
 
     def before_end(self):
         return self.current <= self.end
@@ -207,7 +208,7 @@ class StrategyManagerFast:
     def __init__(self):
         self.sages = {}
         self.prophecy = pd.DataFrame()
-        self.max_cpus = 24
+        self.max_cpus = 30
 
     def initialize_strategies(self, symbols):
         self.sages = {symbol: Maengja(symbol) for symbol in symbols}
@@ -242,19 +243,22 @@ class StrategyManagerFast:
 
 class OrderManager:
 
-    def __init__(self, live, one_time_invest_ratio, max_buy_per_min, max_ratio_per_asset):
+    def __init__(self, live, one_time_invest_ratio, max_buy_per_min, max_ratio_per_asset, logfile, time_manager):
         self.live = live
         self.trade_cfg = dict(one_time_invest_ratio=one_time_invest_ratio,
                               max_buy_per_min=max_buy_per_min,
                               max_ratio_per_asset=max_ratio_per_asset)
+        self.logfile = logfile
+        self.logger = Logger(self.logfile)
+        self.time_manager = time_manager
         if live:
-            self.buyer = BuyerLive(self.trade_cfg)
-            self.seller = SellerLive()
+            self.buyer = BuyerLive(self.trade_cfg, self.logger, self.time_manager)
+            self.seller = SellerLive(self.logger, self.time_manager)
             self.account = AccountLive()
             self.order_list = OrderList(live)
         else:
-            self.buyer = BuyerLocal(self.trade_cfg)
-            self.seller = SellerLocal()
+            self.buyer = BuyerLocal(self.trade_cfg, self.logger, self.time_manager)
+            self.seller = SellerLocal(self.logger, self.time_manager)
             self.account = AccountLocal()
             self.order_list = OrderList(live)
 
@@ -264,7 +268,7 @@ class OrderManager:
             self.order_list.update()
             for symbol in sell_symbols:
                 if self.live:
-                    if (symbol in self.order_list.orders):
+                    if symbol in self.order_list.orders:
                         continue
                 sold = self.seller.sell(prophecy, symbol, self.order_list)
                 if sold:
@@ -280,7 +284,7 @@ class OrderManager:
             for _, row in sorted_buy_hubos.iterrows():
                 if self.is_affordable(row['symbol'], row['price']) and (row['symbol'] not in sell_symbols):
                     if self.live:
-                        if (row['symbol'] in self.order_list.orders):
+                        if row['symbol'] in self.order_list.orders:
                             continue
                     bought = self.buyer.buy(prophecy, row['symbol'], self.order_list)
                     if bought:
