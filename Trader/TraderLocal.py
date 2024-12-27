@@ -10,7 +10,7 @@ class TraderLocal:
 
     def __init__(self):
         self.time_manager = TimeManager()
-        self.symbol_manager = SymbolManager(max_symbols=-1, asset_filter_rate=0.05, renew_symbol=True, max_workers=16)
+        self.symbol_manager = SymbolManager(max_symbols=-1, asset_filter_rate=0.05, renew_symbol=False, max_workers=16)
         self.data_manager = DataManagerFast(history_param={'period': 2000, 'bar_window': 1, 'min_num_bars': 480}, max_workers=16)
 
         self.logger = None
@@ -61,8 +61,8 @@ class TraderLocal:
     def initialize(self, start, end, file_name):
         self.time_manager.set_period(start, end)
         symbols = self.symbol_manager.initialize_symbols(self.time_manager.start)
-        self.data_manager.fetch_history(symbols, self.time_manager.current, self.time_manager.timezone)
-
+        symbols_in_history = self.data_manager.fetch_history(symbols, self.time_manager.current, self.time_manager.timezone)
+        self.symbol_manager.update(symbols_in_history)
         self.prophecy_log_file = file_name + "_prophecy" + f"_{start}_{end}_{datetime.now(pytz.timezone('America/New_York')).strftime('%Y-%m-%d %H-%M-%S')}.csv"
         self.prophecy_log_file = self.prophecy_log_file.replace(":", "-")
         self.trader_log_file = file_name + "_trader" + f"_{start}_{end}_{datetime.now(pytz.timezone('America/New_York')).strftime('%Y-%m-%d %H-%M:%S')}.csv"
@@ -83,7 +83,7 @@ if __name__ == "__main__":
 
     file_name = "trader_local_maengja"
     start = '2024-11-01 09:30:00'
-    end = '2024-11-30 16:00:00'
+    end = '2024-11-01 10:00:00'
 
     trader.run(start, end, file_name)
 

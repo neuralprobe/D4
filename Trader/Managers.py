@@ -30,7 +30,7 @@ class TimeManager:
         self.end = pd.Timestamp(end, tz=self.timezone).replace(microsecond=0)
 
     def advance_current(self, minutes=1):
-        self.current += pd.Timedelta(minutes=minutes).replace(microsecond=0)
+        self.current += pd.Timedelta(minutes=minutes)
 
     def sync_current(self):
         self.current = pd.Timestamp.now(tz=self.timezone).replace(microsecond=0)
@@ -63,6 +63,8 @@ class SymbolManager:
         self.symbols = EquityFilter(renew=self.renew_symbol, asset_filter_rate=self.asset_filter_rate, start_timestamp=start_timestamp, max_workers=self.max_workers).filter_symbols()[:self.max_symbols]
         return self.symbols
 
+    def update(self, new_symbols):
+        self.symbols = new_symbols
 
 class DataManager:
 
@@ -71,6 +73,7 @@ class DataManager:
         self.history_param = history_param
         self.history = {}
         self.recent = {}
+        self.optimize_timing = None
 
     def fetch_history(self, symbols, current, timezone):
         self.history = self.fetcher.get_stock_history(
@@ -96,6 +99,22 @@ class DataManager:
             min_num_bars=1,
             local_data=False
         )
+        if not self.recent:
+            return self.recent
+
+        self.merge_recent_data_into_hourly()
+
+        if not self.optimize_timing:
+            self.optimize_timing = current
+
+        if (current - self.optimize_timing) > pd.Timedelta(days=1):
+            self._optimize_dataframes()
+            self.optimize_timing = current
+
+        print(f"최신분봉:{self.recent['AAPL']}")
+        print(f"최신시간봉:{self.history['AAPL'].index[-1]}")
+        print(f"이전시간봉:{self.history['AAPL'].index[-2]}")
+
         return self.recent
 
     def merge_recent_data_into_hourly(self):
@@ -119,13 +138,20 @@ class DataManager:
     def _create_new_hour_bar(self, symbol):
         new_row = self.recent[symbol].iloc[[-1]]
         if symbol in self.history:
+            # 기존 데이터프레임이 있을 경우 오래된 데이터 삭제
             self.history[symbol].drop(self.history[symbol].index[:1], inplace=True)
         else:
-            self.history[symbol] = pd.DataFrame()
+            # 빈 데이터프레임 생성 시 new_row와 동일한 열 구조로 초기화
+            self.history[symbol] = pd.DataFrame(columns=new_row.columns)
 
+        # 데이터 추가
         for index, row in new_row.iterrows():
             self.history[symbol].loc[index] = row
+            pass
+
+        # 인덱스 정렬
         self.history[symbol].sort_index(inplace=True)
+
 
     def _update_existing_hour_bar(self, symbol):
         new_row = self.recent[symbol].iloc[[-1]]
@@ -142,6 +168,20 @@ class DataManager:
             self.history[symbol].loc[last_index, 'vwap'] = (
                 self.history[symbol].loc[last_index, 'trading_value'] / self.history[symbol].loc[last_index, 'volume']
             )
+        else:
+            self.history[symbol].loc[last_index, 'vwap'] = 0
+
+    def _optimize_dataframes(self):
+        """
+        각 DataFrame을 복사하여 메모리 단편화를 해결.
+        """
+        for symbol in self.history:
+            if not self.history[symbol].empty:
+                # DataFrame 복사로 메모리 최적화
+                self.history[symbol] = self.history[symbol].copy()
+
+                # 필요 시 인덱스 재설정
+                self.history[symbol].reset_index(drop=False, inplace=True)
 
 class DataManagerFast(DataManager):
 
@@ -180,7 +220,7 @@ class DataManagerFast(DataManager):
                     print(f"Error fetching data for symbol {symbol}: {e}")
 
 
-        return self.history
+        return self.history.keys()
 
 
 class StrategyManager:
@@ -208,14 +248,14 @@ class StrategyManagerFast:
     def __init__(self):
         self.sages = {}
         self.prophecy = pd.DataFrame()
-        self.max_cpus = 30
+        self.max_workers = 30
 
     def initialize_strategies(self, symbols):
         self.sages = {symbol: Maengja(symbol) for symbol in symbols}
 
     def evaluate(self, history, recent):
         self.prophecy = pd.DataFrame()
-        max_threads = min(self.max_cpus, len(recent))  # 심볼의 수보다 많으면 len(recent)로 조정
+        max_threads = min(self.max_workers, len(recent))  # 심볼의 수보다 많으면 len(recent)로 조정
         recent_symbols = recent.keys()
         hist_symbols = []
         for sym in recent_symbols:

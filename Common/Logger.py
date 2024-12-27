@@ -64,7 +64,7 @@ def search_and_export_to_excel(filename, start, end,):
         if filename in file and start in file and end in file and file.endswith(".csv"):
             file_path = os.path.join(folder_path, file)
             try:
-                data = pd.read_csv(file_path)
+                data = pd.read_csv(file_path, encoding='utf-8-sig')
             except Exception as e:
                 print(f"파일 읽기 실패: {file_path}, 에러: {e}")
                 continue
