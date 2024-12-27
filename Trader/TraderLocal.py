@@ -83,7 +83,7 @@ if __name__ == "__main__":
 
     file_name = "trader_local_maengja"
     start = '2024-11-01 09:30:00'
-    end = '2024-11-01 10:00:00'
+    end = '2024-11-29 16:00:00'
 
     trader.run(start, end, file_name)
 
