@@ -27,13 +27,13 @@ class AccountBase(metaclass=SingletonMeta):
             self.logger.initiated = True
         if len(self.positions.assets.keys()):
             for symbol in self.positions.assets.keys():
-                self.logger(f"{self.time.current.tz_localize(None)}, {r2(self.get_total_value())}, {r2(self.cash)}, {r2(self.positions.value)}, "
+                self.logger(f"{self.time.current}, {r2(self.get_total_value())}, {r2(self.cash)}, {r2(self.positions.value)}, "
                             f"{symbol}, {r2(self.positions.assets[symbol]['qty'])}, {r2(float(self.positions.assets[symbol]['avg_price'])) }, "
                             f"{r2(float(self.positions.assets[symbol]['price']))}, {r2(float(self.positions.assets[symbol]['stop_trailing'])) }, "
                             f"{r2(float(self.positions.assets[symbol]['stop_value']))}, {self.positions.assets[symbol]['stop_key']}")
         else:
             self.logger(
-                f"{self.time.current.tz_localize(None)}, {r2(self.get_total_value())}, {r2(self.cash)}, {r2(self.positions.value)}, "
+                f"{self.time.current}, {r2(self.get_total_value())}, {r2(self.cash)}, {r2(self.positions.value)}, "
                 f"None, {r2(0.0)}, {r2(0.0)}, "
                 f"{r2(0.0)}, {r2(0.0)}, "
                 f"{r2(0.0)}, None")

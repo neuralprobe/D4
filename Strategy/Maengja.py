@@ -248,7 +248,11 @@ class Maengja:
         is_rsi_check_bearish = self.note['RSI_check'][-1] < 0
         is_bearish = is_po_divergence_bearish or is_rsi_check_bearish
 
-        buy = is_aligned and (is_at_least_one_touch or is_sma_breakthrough) and not is_bearish
+        # 장종료시 매수 취소
+        now = self.note['time'][-1].tz_convert('America/New_York')
+        is_now_end_of_day =(now.hour, now.minute) == self.market_end_time
+        buy = is_aligned and (is_at_least_one_touch or is_sma_breakthrough) and (not is_bearish)
+        buy = buy and not is_now_end_of_day
         self.note.setdefault('buy', []).append(buy)
 
         buy_reason_parts = []
@@ -384,17 +388,15 @@ class Maengja:
         top_resist_downward_break = self.note['top_resist_downward_break'][-1]
 
         #4. 장종료시 매도
-        now = self.note['time'][-1]
-        is_now_end_of_day = (
-                (now.hour, now.minute) == self.market_end_time
-                and self.symbol not in self.positions.assets.keys()
-        )
+        now = self.note['time'][-1].tz_convert('America/New_York')
+        is_now_end_of_day = (now.hour, now.minute) == self.market_end_time
 
         # 매도신호 정리
         sell = (
-                (do_stop_loss or do_take_profit or top_resist_downward_break or is_now_end_of_day)
+                (do_stop_loss or do_take_profit or top_resist_downward_break)
                 and not do_keep_profit
-        )
+                )
+        sell = sell or is_now_end_of_day
         self.note.setdefault('sell', []).append(sell)
 
         sell_reasons = []

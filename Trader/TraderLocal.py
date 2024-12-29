@@ -10,8 +10,8 @@ class TraderLocal:
 
     def __init__(self):
         self.time_manager = TimeManager()
-        self.symbol_manager = SymbolManager(max_symbols=-1, asset_filter_rate=0.05, renew_symbol=False, max_workers=16)
-        self.data_manager = DataManagerFast(history_param={'period': 2000, 'bar_window': 1, 'min_num_bars': 480}, max_workers=16)
+        self.symbol_manager = SymbolManager(max_symbols=-1, asset_filter_rate=0.05, renew_symbol=True, max_workers=30)
+        self.data_manager = DataManagerFast(history_param={'period': 2000, 'bar_window': 1, 'min_num_bars': 480}, max_workers=30)
 
         self.logger = None
         self.account = None
@@ -52,9 +52,9 @@ class TraderLocal:
                     if not self.logger.initiated:
                         self.logger("시간, 의견, 종목,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,")
                         self.logger.initiated = True
-                    self.logger(f"{self.time_manager.current.tz_localize(None)}, BUY,",", ".join(buy_list))
-                    self.logger(f"{self.time_manager.current.tz_localize(None)}, SELL,",", ".join(sell_list))
-                    self.logger(f"{self.time_manager.current.tz_localize(None)}, KEEP,",", ".join(keep_list))
+                    self.logger(f"{self.time_manager.current}, BUY,",", ".join(buy_list))
+                    self.logger(f"{self.time_manager.current}, SELL,",", ".join(sell_list))
+                    self.logger(f"{self.time_manager.current}, KEEP,",", ".join(keep_list))
                 self.order_manager.execute_orders(prophecy, self.prophecy_history)
             self.account.print()
 
@@ -80,15 +80,11 @@ class TraderLocal:
 
 if __name__ == "__main__":
     trader = TraderLocal()
-
     file_name = "trader_local_maengja"
-    start = '2024-11-01 09:30:00'
-    end = '2024-11-29 16:00:00'
-
+    start = '2024-10-01 09:31:00'
+    end = '2024-10-30 16:00:00'
     trader.run(start, end, file_name)
-
     Logger.close_all()
-
     search_and_export_to_excel(file_name, start.replace(":", "-"), end.replace(":", "-"))
 
 
