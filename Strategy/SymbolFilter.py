@@ -57,7 +57,7 @@ class EquityFilter(AssetFilter):
             request_params = StockBarsRequest(
                 symbol_or_symbols=batch,
                 timeframe=TimeFrame.Day,
-                start=self.start_timestamp - timedelta(days=120), #120
+                start=self.start_timestamp - timedelta(days=10), #120
                 end=self.start_timestamp,
                 feed=DataFeed.SIP
             )

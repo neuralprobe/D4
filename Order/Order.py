@@ -44,11 +44,11 @@ class BuyerLocal(BuyerBase):
             self.logger("시간, 매매, 종목, 수량, 현재가, 평균가, 현금변화, 이익")
             self.logger.initiated = True
         if buy_symbol in self.account.positions.assets:
-            self.logger(f"{self.time_manager.current.tz_localize(None)}, BUY, {buy_symbol}, {r2(qty)}, {r2(price)}, "
+            self.logger(f"{self.time_manager.current}, BUY, {buy_symbol}, {r2(qty)}, {r2(price)}, "
                         f"{r2(self.account.positions.assets[buy_symbol]['avg_price'])}, "
                         f"{-r2(cost)}, {r2(0.0)}")
         else:
-            self.logger(f"{self.time_manager.current.tz_localize(None)}, BUY, {buy_symbol}, {r2(qty)}, {r2(price)}, "
+            self.logger(f"{self.time_manager.current}, BUY, {buy_symbol}, {r2(qty)}, {r2(price)}, "
                         f"{r2(price)}, "
                         f"{-r2(cost)}, {r2(0.0)}")
         self.account.positions.add_new_asset(market_order_data)
@@ -98,11 +98,11 @@ class BuyerLive(BuyerBase):
             self.logger("시간, 매매, 종목, 수량, 현재가, 평균가, 현금변화, 이익")
             self.logger.initiated = True
         if buy_symbol in self.account.positions.assets:
-            self.logger(f"{self.time_manager.current.tz_localize(None)}, BUY, {buy_symbol}, {r2(qty)}, {r2(price)}, "
+            self.logger(f"{self.time_manager.current}, BUY, {buy_symbol}, {r2(qty)}, {r2(price)}, "
                         f"{r2(self.account.positions.assets[buy_symbol]['avg_price'])}, "
                         f"{-r2(cost)}, {r2(0.0)}")
         else:
-            self.logger(f"{self.time_manager.current.tz_localize(None)}, BUY, {buy_symbol}, {r2(qty)}, {r2(price)}, "
+            self.logger(f"{self.time_manager.current}, BUY, {buy_symbol}, {r2(qty)}, {r2(price)}, "
                         f"{r2(price)}, "
                         f"{-r2(cost)}, {r2(0.0)}")
         self.account.positions.add_new_asset(market_order_info)
@@ -143,7 +143,7 @@ class SellerLocal(SellerBase):
         if not self.logger.initiated:
             self.logger("시간, 매매, 종목, 수량, 현재가, 평균가, 현금변화, 이익")
             self.logger.initiated = True
-        self.logger(f"{self.time_manager.current.tz_localize(None)}, SELL, {sell_symbol}, {r2(qty)}, {r2(price)}, "
+        self.logger(f"{self.time_manager.current}, SELL, {sell_symbol}, {r2(qty)}, {r2(price)}, "
                     f"{r2(avg_price)}, "
                     f"{r2(market_value)}, {r2(market_value-cost)}")
         self.account.positions.remove_asset(sell_symbol)
@@ -190,7 +190,7 @@ class SellerLive(SellerBase):
             if not self.logger.initiated:
                 self.logger("시간, 매매, 종목, 수량, 현재가, 평균가, 현금변화, 이익")
                 self.logger.initiated = True
-            self.logger(f"{self.time_manager.current.tz_localize(None)}, SELL, {sell_symbol}, {r2(qty)}, {r2(price)}, "
+            self.logger(f"{self.time_manager.current}, SELL, {sell_symbol}, {r2(qty)}, {r2(price)}, "
                         f"{r2(avg_price)}, "
                         f"{r2(market_value)}, {r2(market_value - cost)}")
             time.sleep(1)

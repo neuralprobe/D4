@@ -11,6 +11,7 @@ from Strategy.SymbolFilter import EquityFilter
 import pandas_market_calendars as Calender
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from Common.Logger import Logger
+from itertools import islice
 
 
 class TimeManager:
@@ -21,8 +22,8 @@ class TimeManager:
         self.current = None
         self.end = None
         self.open_dates = None
-        self.open_time = (9, 30)
-        self.close_time = (16, 0)
+        self.open_time = (9, 31)
+        self.close_time = (15, 59)
 
     def set_period(self, start, end):
         self.start = pd.Timestamp(start, tz=self.timezone).replace(microsecond=0)
@@ -111,10 +112,6 @@ class DataManager:
             self._optimize_dataframes()
             self.optimize_timing = current
 
-        print(f"최신분봉:{self.recent['AAPL']}")
-        print(f"최신시간봉:{self.history['AAPL'].index[-1]}")
-        print(f"이전시간봉:{self.history['AAPL'].index[-2]}")
-
         return self.recent
 
     def merge_recent_data_into_hourly(self):
@@ -181,7 +178,7 @@ class DataManager:
                 self.history[symbol] = self.history[symbol].copy()
 
                 # 필요 시 인덱스 재설정
-                self.history[symbol].reset_index(drop=False, inplace=True)
+                #self.history[symbol].reset_index(drop=False, inplace=True)
 
 class DataManagerFast(DataManager):
 
@@ -218,9 +215,63 @@ class DataManagerFast(DataManager):
                         print(f"Warning: No data returned for symbol {symbol}")
                 except Exception as e:
                     print(f"Error fetching data for symbol {symbol}: {e}")
-
-
         return self.history.keys()
+
+    def update_recent_data(self, symbols, current, timezone):
+        def chunk_symbols(symbols, chunk_size):
+            """Helper function to split symbols into chunks of size `chunk_size`."""
+            iterator = iter(symbols)
+            while True:
+                chunk = list(islice(iterator, chunk_size))
+                if not chunk:
+                    break
+                yield chunk
+
+        def update_recent_symbols_data(symbols_chunk):
+            """Fetch data for a chunk of symbols."""
+            return self.fetcher.get_stock_history(
+                symbols=symbols_chunk,
+                start=current - pd.Timedelta(minutes=1),
+                end=current,
+                timezone=timezone,
+                time_frame=TimeFrame.Minute,
+                bar_window=self.history_param['bar_window'],
+                min_num_bars=1,
+                local_data=False
+            )
+
+        # 병렬 실행
+        recent = {}
+        chunk_size = max(1, len(symbols) // self.max_workers)
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            future_to_chunk = {executor.submit(update_recent_symbols_data, chunk): chunk for chunk in chunk_symbols(symbols, chunk_size)}
+
+            for future in as_completed(future_to_chunk):
+                symbols_chunk = future_to_chunk[future]
+                try:
+                    data_chunk = future.result()
+                    for symbol in symbols_chunk:
+                        data = data_chunk.get(symbol)
+                        if data is not None and not data.empty:
+                            recent[symbol] = data
+                except Exception as e:
+                    print(f"Error fetching data for chunk {symbols_chunk}: {e}")
+
+        self.recent = recent
+
+        if not self.recent:
+            return self.recent
+
+        self.merge_recent_data_into_hourly()
+
+        if not self.optimize_timing:
+            self.optimize_timing = current
+
+        if (current - self.optimize_timing) > pd.Timedelta(days=1):
+            self._optimize_dataframes()
+            self.optimize_timing = current
+
+        return self.recent
 
 
 class StrategyManager:

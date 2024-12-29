@@ -98,6 +98,8 @@ def r2(num):
 class Printer:
     @staticmethod
     def store_prophecy_history(prophecy_history, filename):
+        prophecy_history['time'] = prophecy_history['time'].apply(lambda x: x.tz_convert('America/New_York'))
+
         prophecy_history.rename(columns={'time': '시간',
                                       'symbol': '종목',
                                       'touch_bb1_lower': 'bb1아래',
