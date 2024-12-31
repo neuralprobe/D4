@@ -53,15 +53,16 @@ class TimeManager:
 
 class SymbolManager:
 
-    def __init__(self, max_symbols=50, asset_filter_rate=0.05, renew_symbol=False, max_workers=1):
+    def __init__(self, max_symbols=50, asset_filter_num=250, russel_filter_num=250, renew_symbol=False, max_workers=1):
         self.symbols = []
         self.max_symbols = max_symbols
-        self.asset_filter_rate = asset_filter_rate
+        self.asset_filter_num = asset_filter_num
+        self.russel_filter_num = russel_filter_num
         self.renew_symbol = renew_symbol
         self.max_workers = max_workers
 
     def initialize_symbols(self, start_timestamp):
-        self.symbols = EquityFilter(renew=self.renew_symbol, asset_filter_rate=self.asset_filter_rate, start_timestamp=start_timestamp, max_workers=self.max_workers).filter_symbols()[:self.max_symbols]
+        self.symbols = EquityFilter(renew=self.renew_symbol, asset_filter_num=self.asset_filter_num, russel_filter_num=self.russel_filter_num, start_timestamp=start_timestamp, max_workers=self.max_workers).filter_symbols()[:self.max_symbols]
         return self.symbols
 
     def update(self, new_symbols):
@@ -328,6 +329,7 @@ class StrategyManagerFast:
         return self.prophecy
 
     def _evaluate_symbol(self, symbol, history, recent):
+
         note = self.sages[symbol].update(history[symbol], recent[symbol])
         recent_note = {key: [note[key][-1]] for key in note}
         return pd.DataFrame(recent_note)
@@ -369,7 +371,8 @@ class OrderManager:
 
         try:
             buy_hubos = prophecy[prophecy['buy']]
-            sorted_buy_hubos = buy_hubos.sort_values(by='trading_value', ascending=False)
+            sorted_buy_hubos = buy_hubos.sort_values(by=['buy_strength', 'trading_value'], ascending=[False, False])
+
             buy_count = 0
             self.order_list.update()
             for _, row in sorted_buy_hubos.iterrows():
