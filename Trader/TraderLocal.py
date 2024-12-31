@@ -50,7 +50,7 @@ class TraderLocal:
                 keep_list = prophecy[prophecy['keep_profit']]['symbol'].tolist()
                 if buy_list or sell_list or keep_list:
                     if not self.logger.initiated:
-                        self.logger("시간, 의견, 종목,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,")
+                        self.logger("시간, 의견, 종목,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,")
                         self.logger.initiated = True
                     self.logger(f"{self.time_manager.current}, BUY,",", ".join(buy_list))
                     self.logger(f"{self.time_manager.current}, SELL,",", ".join(sell_list))
