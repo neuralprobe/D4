@@ -15,12 +15,12 @@ class Maengja:
         self.current_minute = None
         self.market_end_time = (15, 59)
         self.positions = PositionLive() if SingletonMeta.is_instantiated(PositionLive) else PositionLocal()
-        self.params = dict(BB_1=dict(length=20, std=2, buy_margin=0.005),
-                           BB_2=dict(length=4, std=4, buy_margin=0.005),
-                           Trailing=(1.00-0.005),
+        self.params = dict(BB_1=dict(length=20, std=2, buy_margin=0.001),
+                           BB_2=dict(length=4, std=4, buy_margin=0.001),
+                           Trailing=(1.00-0.001),
                            Price_Oscillator=dict(length=14),
                            RSI=dict(length=14, hill_window=32, hills=3),
-                           SMA=dict(margin=0.005, periods=[5, 20, 60, 120, 240, 480]),
+                           SMA=dict(margin=0.001, periods=[5, 20, 60, 120, 240, 480]),
                            note_list_limit=3)
         self.sma_cols = [f'SMA_{period}' for period in self.params['SMA']['periods']]
         self.data_ = None
@@ -35,8 +35,8 @@ class Maengja:
             self.note['time'].append(self.current_minute)
             self.note['symbol'].append(self.symbol)
 
-            self.breakthrough_metric_upward_two_level(data, recent, 'bb1_lower', self.params['BB_1']['buy_margin'])
-            self.breakthrough_metric_upward_two_level(data, recent, 'bb2_lower', self.params['BB_2']['buy_margin'])
+            self.detect_bb_upward_breakout(data, recent, 'bb1_lower', self.params['BB_1']['buy_margin'])
+            self.detect_bb_upward_breakout(data, recent, 'bb2_lower', self.params['BB_2']['buy_margin'])
             self.get_po_divergence(data)
             self.check_rsi(data, self.params['RSI']['hill_window'], self.params['RSI']['hills'])
             self.check_sma_alignment(data)
@@ -140,6 +140,12 @@ class Maengja:
                     continue
                 self.positions.assets[symbol]['stop_value'] = data[stop_key].iloc[-1]
 
+    def detect_bb_upward_breakout(self, data, recent, metric, margin):
+        self.note.setdefault(f'bullish_breakout_{metric}',[]).append(False)
+        bullish_breakout_margin = self.detect_upward_breakout(data, recent, metric, margin)
+        self.note.setdefault(f'bullish_breakout_{metric}_margin',[]).append(bullish_breakout_margin)
+        touch = bullish_breakout_margin
+        self.note.setdefault(f'touch_{metric}',[]).append(touch)
 
     def breakthrough_metric_upward_two_level(self, data, recent, metric, margin):
         # bullish_breakout = (
