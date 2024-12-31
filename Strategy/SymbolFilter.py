@@ -10,6 +10,7 @@ from ApiAccess.ApiAccess import ClientType, ClientManager
 import Common.Common as Common
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import csv
 
 class AssetFilter:
     """Base class for asset filtering with Alpaca API."""
@@ -30,11 +31,12 @@ class AssetFilter:
 class EquityFilter(AssetFilter):
     """Filter US equities based on trading volume and value."""
 
-    def __init__(self, renew=False, asset_filter_rate=0.05, start_timestamp=pd.Timestamp.now(), max_workers=1):
+    def __init__(self, renew=False, asset_filter_num=250, russel_filter_num=250, start_timestamp=pd.Timestamp.now(), max_workers=1):
         super().__init__('US_EQUITY', f'{os.environ.get("D4")}/Data/Symbols/symbols_us_{start_timestamp}.csv')
         self.renew = renew
         self.start_timestamp = start_timestamp
-        self.asset_filter_rate = asset_filter_rate
+        self.asset_filter_num = asset_filter_num
+        self.russel_filter_num = russel_filter_num
         self.max_workers = max_workers
 
     @staticmethod
@@ -117,10 +119,40 @@ class EquityFilter(AssetFilter):
         sorted_symbols = mean_trading_value.sort_values(ascending=False)
 
         # Select and write top-k assets
-        threshold = int(len(sorted_symbols) * self.asset_filter_rate)
+        threshold = self.asset_filter_num # int(len(sorted_symbols) * self.asset_filter_rate)
         top_symbols = sorted_symbols.head(threshold).index.tolist()
-        self.write_symbols_to_file(top_symbols)
-        return top_symbols
+
+        # Do the same for Russel 2000
+        folder_path = os.path.join(os.environ.get('D4'), 'Data/ExtData')
+        russel = "IWM_holdings.csv"
+        russel_csv = os.path.join(folder_path,russel)
+        symbol_russel = self.get_tickers_from_csv(russel_csv)
+        daily_bars_russel = self.get_bars(symbol_russel)
+        daily_bars_russel['trading_value'] = daily_bars_russel['volume'] * daily_bars_russel['vwap']
+        mean_trading_value_russel = daily_bars_russel.groupby(level='symbol')['trading_value'].mean()
+        sorted_symbols_russel = mean_trading_value_russel.sort_values(ascending=False)
+        threshold_russel = self.russel_filter_num # int(len(sorted_symbols_russel) * self.asset_filter_rate)
+        top_symbols_russel = sorted_symbols_russel.head(threshold_russel).index.tolist()
+        final_top_symbols = list(set(top_symbols + top_symbols_russel))
+
+        self.write_symbols_to_file(final_top_symbols)
+        return final_top_symbols
+
+    def get_tickers_from_csv(self,file_path):
+        """
+        Reads the first column (Ticker) from a CSV file and returns a list of tickers.
+
+        :param file_path: Path to the CSV file.
+        :return: List of tickers.
+        """
+        tickers = []
+        with open(file_path, 'r') as file:
+            csv_reader = csv.reader(file)
+            # Skip the header row
+            next(csv_reader)
+            for row in csv_reader:
+                tickers.append(row[0])  # Append the first column (Ticker)
+        return tickers
 
 
 class CryptoFilter(AssetFilter):
@@ -170,3 +202,11 @@ class CryptoFilter(AssetFilter):
         top_symbols = mean_trading_value[mean_trading_value > threshold].index.tolist()
         self.write_symbols_to_file(top_symbols)
         return top_symbols
+
+import pytz
+
+if __name__ == "__main__":
+    symbols = EquityFilter(renew=True, asset_filter_num=250, russel_filter_num=250,
+                                start_timestamp=pd.Timestamp('2024-11-01 09:31:00', tz=pytz.timezone('America/New_York')).replace(microsecond=0), max_workers=16).filter_symbols()
+    print(symbols)
+    print("Sym Len:", len(symbols))

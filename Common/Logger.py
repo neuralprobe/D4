@@ -83,7 +83,7 @@ def search_and_export_to_excel(filename, start, end,):
 
             # 데이터 추가
             data.to_excel(writer, sheet_name=sheet_name, index=False)
-            print(f"파일 {file}을(를) {sheet_name} 시트에 추가했습니다.")
+            print(f"파일 {file}을(를) {sheet_name} 시트에 추가했습니다 .")
 
     if len(writer.sheets) == 0:
         # 기본 시트를 생성

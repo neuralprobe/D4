@@ -15,14 +15,16 @@ class Maengja:
         self.current_minute = None
         self.market_end_time = (15, 59)
         self.positions = PositionLive() if SingletonMeta.is_instantiated(PositionLive) else PositionLocal()
-        self.params = dict(BB_1=dict(length=20, std=2, buy_margin=0.01),
-                           BB_2=dict(length=4, std=4, buy_margin=0.01),
-                           Trailing=(1.00-0.01),
+        self.params = dict(BB_1=dict(length=20, std=2, buy_margin=0.005),
+                           BB_2=dict(length=4, std=4, buy_margin=0.005),
+                           Trailing=(1.00-0.005),
                            Price_Oscillator=dict(length=14),
                            RSI=dict(length=14, hill_window=32, hills=3),
-                           SMA=dict(margin=0.01, periods=[5, 20, 60, 120, 240, 480]),
+                           SMA=dict(margin=0.005, periods=[5, 20, 60, 120, 240, 480]),
                            note_list_limit=3)
         self.sma_cols = [f'SMA_{period}' for period in self.params['SMA']['periods']]
+        self.data_ = None
+        self.recent_ = None
 
     def update(self, data, recent):
         try:
@@ -52,21 +54,76 @@ class Maengja:
 
         return self.note
 
+    # def calculate_indicators(self, data):
+    #     bb_columns = ['lower', 'mid', 'upper', 'bandwidth', 'percent']
+    #     bb_1 = ta.bbands(data['close'], length=self.params["BB_1"]["length"], std=self.params["BB_1"]["std"])
+    #     bb_1.columns = bb_columns
+    #     bb_2 = ta.bbands(data['close'], length=self.params["BB_2"]["length"], std=self.params["BB_2"]["std"])
+    #     bb_2.columns = bb_columns
+    #     for col, prefix in product(bb_columns, ['bb1_', 'bb2_']):
+    #         data[f'{prefix}{col}'] = bb_1[col] if prefix == 'bb1_' else bb_2[col]
+    #
+    #     data['SMA_for_PO'] = ta.sma(data['close'], length=self.params["Price_Oscillator"]["length"])
+    #     data['Price_Oscillator'] = ((data['close'] - data['SMA_for_PO']) / data['SMA_for_PO']) * 100.0
+    #     data['RSI'] = ta.rsi(data['close'], length=self.params["RSI"]["length"])
+    #     for period in self.params["SMA"]["periods"]:
+    #         if period <= len(data):
+    #             data[f'SMA_{period}'] = ta.sma(data['close'], length=period)
     def calculate_indicators(self, data):
-        bb_columns = ['lower', 'mid', 'upper', 'bandwidth', 'percent']
-        bb_1 = ta.bbands(data['close'], length=self.params["BB_1"]["length"], std=self.params["BB_1"]["std"])
-        bb_1.columns = bb_columns
-        bb_2 = ta.bbands(data['close'], length=self.params["BB_2"]["length"], std=self.params["BB_2"]["std"])
-        bb_2.columns = bb_columns
-        for col, prefix in product(bb_columns, ['bb1_', 'bb2_']):
-            data[f'{prefix}{col}'] = bb_1[col] if prefix == 'bb1_' else bb_2[col]
+        # 데이터가 충분히 있는지 확인
+        if data.empty or len(data) < max(
+                self.params["BB_1"]["length"],
+                self.params["BB_2"]["length"],
+                self.params["Price_Oscillator"]["length"],
+                self.params["RSI"]["length"],
+                max(self.params["SMA"]["periods"])
+        ):
+            print("Insufficient data to calculate indicators.")
+            return
 
-        data['SMA_for_PO'] = ta.sma(data['close'], length=self.params["Price_Oscillator"]["length"])
-        data['Price_Oscillator'] = ((data['close'] - data['SMA_for_PO']) / data['SMA_for_PO']) * 100.0
-        data['RSI'] = ta.rsi(data['close'], length=self.params["RSI"]["length"])
-        for period in self.params["SMA"]["periods"]:
-            if period <= len(data):
-                data[f'SMA_{period}'] = ta.sma(data['close'], length=period)
+        # 마지막 데이터만 선택
+        last_close = data['close'].iloc[-1]
+        last_index = data.index[-1]
+
+        # 볼린저 밴드 계산 (마지막 데이터만)
+        try:
+            bb_columns = ['lower', 'mid', 'upper', 'bandwidth', 'percent']
+            bb_1 = ta.bbands(data['close'].iloc[-self.params["BB_1"]["length"]:],
+                             length=self.params["BB_1"]["length"],
+                             std=self.params["BB_1"]["std"]).iloc[-1]
+            bb_1.index = bb_columns
+            bb_2 = ta.bbands(data['close'].iloc[-self.params["BB_2"]["length"]:],
+                             length=self.params["BB_2"]["length"],
+                             std=self.params["BB_2"]["std"]).iloc[-1]
+            bb_2.index = bb_columns
+
+            for col, prefix in product(bb_columns, ['bb1_', 'bb2_']):
+                data.loc[last_index, f'{prefix}{col}'] = bb_1[col] if prefix == 'bb1_' else bb_2[col]
+        except Exception as e:
+            print(f"Error calculating Bollinger Bands: {e}")
+
+        # SMA for PO (마지막 데이터만)
+        try:
+            data['SMA_for_PO'] = ta.sma(data['close'], length=self.params["Price_Oscillator"]["length"])
+            # Price Oscillator (전체 범위 계산)
+            data['Price_Oscillator'] = ((data['close'] - data['SMA_for_PO']) / data['SMA_for_PO']) * 100.0
+        except Exception as e:
+            print(f"Error calculating Price Oscillator: {e}")
+
+        # RSI (전체 범위 계산)
+        try:
+            data['RSI'] = ta.rsi(data['close'], length=self.params["RSI"]["length"])
+        except Exception as e:
+            print(f"Error calculating RSI: {e}")
+
+        # SMA 계산 (마지막 데이터만)
+        try:
+            for period in self.params["SMA"]["periods"]:
+                if period <= len(data):
+                    sma = ta.sma(data['close'].iloc[-period:], length=period).iloc[-1]
+                    data.loc[last_index, f'SMA_{period}'] = sma
+        except Exception as e:
+            print(f"Error calculating SMA for period {period}: {e}")
 
     def update_position_stop_value(self, data, recent):
         for symbol in self.positions.assets:
@@ -85,15 +142,17 @@ class Maengja:
 
 
     def breakthrough_metric_upward_two_level(self, data, recent, metric, margin):
-        bullish_breakout = (
-                self.detect_upward_breakout(data, recent, metric, 0.0)
-                or self.detect_upward_breakout_keeping(data, recent, metric, 0.0, f'bullish_breakout_{metric}',
-                                                       f'touch_{metric}')
-        )
-        self.note.setdefault(f'bullish_breakout_{metric}',[]).append(bullish_breakout)
+        # bullish_breakout = (
+        #         self.detect_upward_breakout(data, recent, metric, 0.0)
+        #         or self.detect_upward_breakout_keeping(data, recent, metric, 0.0, f'bullish_breakout_{metric}',
+        #                                                f'touch_{metric}')
+        # )
+        # self.note.setdefault(f'bullish_breakout_{metric}',[]).append(bullish_breakout)
+        self.note.setdefault(f'bullish_breakout_{metric}',[]).append(False)
         bullish_breakout_margin = self.detect_upward_breakout(data, recent, metric, margin)
         self.note.setdefault(f'bullish_breakout_{metric}_margin',[]).append(bullish_breakout_margin)
-        touch = bullish_breakout and bullish_breakout_margin
+        # touch = bullish_breakout and bullish_breakout_margin
+        touch = bullish_breakout_margin
         self.note.setdefault(f'touch_{metric}',[]).append(touch)
 
     @staticmethod
@@ -375,9 +434,9 @@ class Maengja:
         is_resistance_upward_breakout = self.note['resistance_upward_breakout'][-1]
         is_po_divergence_bullish = self.note['PO_divergence'][-1] > 0
         is_rsi_check_bullish = self.note['RSI_check'][-1] > 0
-        is_bullish = is_po_divergence_bullish or is_rsi_check_bullish
-        do_take_profit = is_resistance_upward_breakout and not is_bullish
-        do_keep_profit = is_resistance_upward_breakout and is_bullish
+        is_bearish = (not is_po_divergence_bullish) or (not is_rsi_check_bullish)
+        do_take_profit = is_resistance_upward_breakout and is_bearish
+        do_keep_profit = is_resistance_upward_breakout and (not is_bearish)
         if do_keep_profit:
             change_stop_loss = self.note.get('new_stop_value_hubo',0)[-1] >= self.positions.assets[self.symbol]['stop_value']
             if change_stop_loss:
