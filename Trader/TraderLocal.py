@@ -10,7 +10,7 @@ class TraderLocal:
 
     def __init__(self):
         self.time_manager = TimeManager()
-        self.symbol_manager = SymbolManager(max_symbols=-1, asset_filter_num=250, russel_filter_num=250, renew_symbol=False, max_workers=30)
+        self.symbol_manager = SymbolManager(max_symbols=-1, asset_filter_num=250, russel_filter_num=250, renew_symbol=True, max_workers=30)
         self.data_manager = DataManagerFast(history_param={'period': 2000, 'bar_window': 1, 'min_num_bars': 480}, max_workers=30)
 
         self.logger = None
@@ -81,8 +81,8 @@ class TraderLocal:
 if __name__ == "__main__":
     trader = TraderLocal()
     file_name = "trader_local_maengja"
-    start = '2024-11-01 09:31:00'
-    end = '2024-11-30 16:00:00'
+    start = '2022-04-01 09:31:00'
+    end = '2022-04-30 16:00:00'
     trader.run(start, end, file_name)
     Logger.close_all()
     search_and_export_to_excel(file_name, start.replace(":", "-"), end.replace(":", "-"))
