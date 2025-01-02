@@ -15,12 +15,12 @@ class Maengja:
         self.current_minute = None
         self.market_end_time = (15, 59)
         self.positions = PositionLive() if SingletonMeta.is_instantiated(PositionLive) else PositionLocal()
-        self.params = dict(BB_1=dict(length=20, std=2, buy_margin=0.001),
-                           BB_2=dict(length=4, std=4, buy_margin=0.001),
-                           Trailing=(1.00-0.015),
+        self.params = dict(BB_1=dict(length=20, std=2, buy_margin=0.01),
+                           BB_2=dict(length=4, std=4, buy_margin=0.01),
+                           Trailing=(1.00-0.00),
                            Price_Oscillator=dict(length=14),
                            RSI=dict(length=14, hill_window=32, hills=3),
-                           SMA=dict(margin=0.001, periods=[5, 20, 60, 120, 240, 480]),
+                           SMA=dict(margin=0.01, periods=[5, 20, 60, 120, 240, 480]),
                            note_list_limit=3)
         self.sma_cols = [f'SMA_{period}' for period in self.params['SMA']['periods']]
         self.data_ = None
